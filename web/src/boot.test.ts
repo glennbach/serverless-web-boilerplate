@@ -63,6 +63,30 @@ test("callback failure still cleans the URL", async () => {
   assert.deepEqual(assigned, []);
 });
 
+test("a 401 drops the stored session so the next load signs in again", async () => {
+  const session = JSON.stringify({ idToken: "revoked", expiresAt: NOW + 30 * 60_000 });
+  const store = memoryStore({ session });
+  const { fetchFn } = routedFetch({
+    "/config.json": json(COGNITO),
+    "https://api.example/api/me": json("unauthorized", 401),
+  });
+  const { e, assigned } = env("https://app.example/", fetchFn, store);
+  await assert.rejects(boot(e), /401/);
+  assert.equal(store.has("session"), false);
+  assert.deepEqual(assigned, []);
+});
+
+test("a non-401 API failure keeps the session", async () => {
+  const session = JSON.stringify({ idToken: "tok", expiresAt: NOW + 30 * 60_000 });
+  const store = memoryStore({ session });
+  const { fetchFn } = routedFetch({
+    "/config.json": json(COGNITO),
+    "https://api.example/api/me": json("boom", 502),
+  });
+  await assert.rejects(boot(env("https://app.example/", fetchFn, store).e), /502/);
+  assert.equal(store.has("session"), true);
+});
+
 test("no session redirects to the Hosted UI", async () => {
   const { fetchFn, calls } = routedFetch({ "/config.json": json(COGNITO) });
   const { e, assigned } = env("https://app.example/", fetchFn);

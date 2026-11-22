@@ -83,6 +83,11 @@ export async function exchangeCode(
   return { idToken, expiresAt: idTokenExpiry(idToken) };
 }
 
+/** Forgets the stored ID token, so the next signIn redirects to the Hosted UI. */
+export function clearSession(store: KeyValueStore): void {
+  store.removeItem(SESSION);
+}
+
 function storedSession(store: KeyValueStore, now: number): string | null {
   try {
     const s = JSON.parse(store.getItem(SESSION) ?? "null") as { idToken?: unknown; expiresAt?: unknown } | null;

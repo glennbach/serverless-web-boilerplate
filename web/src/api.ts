@@ -10,7 +10,16 @@ export function parseMe(body: unknown): string {
   return email;
 }
 
-/** Calls GET /api/me and returns the current user's email. */
+/** A non-2xx answer from the API. */
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number) {
+    super(`The API returned ${status}`);
+    this.status = status;
+  }
+}
+
+/** Calls GET /api/me and returns the current user's email. Throws ApiError on a non-2xx status. */
 export async function fetchEmail(
   apiBaseUrl: string,
   idToken: string | null,
@@ -18,6 +27,6 @@ export async function fetchEmail(
 ): Promise<string> {
   const headers: Record<string, string> = idToken ? { Authorization: `Bearer ${idToken}` } : {};
   const res = await fetchFn(`${apiBaseUrl.replace(/\/+$/, "")}/api/me`, { headers });
-  if (!res.ok) throw new Error(`The API returned ${res.status}`);
+  if (!res.ok) throw new ApiError(res.status);
   return parseMe(await res.json());
 }

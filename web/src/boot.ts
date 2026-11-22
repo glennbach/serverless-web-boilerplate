@@ -1,5 +1,5 @@
-import { fetchEmail } from "./api.ts";
-import { signIn, type SignIn } from "./auth.ts";
+import { ApiError, fetchEmail } from "./api.ts";
+import { clearSession, signIn, type SignIn } from "./auth.ts";
 import { loadConfig } from "./config.ts";
 
 /** The browser pieces boot uses, passed in so tests can replace them. */
@@ -30,5 +30,16 @@ export async function boot(env: BootEnv): Promise<string | null> {
     env.assign(result.redirectTo);
     return null;
   }
-  return fetchEmail(cfg.apiBaseUrl, result.idToken, env.fetchFn);
+  try {
+    return await fetchEmail(cfg.apiBaseUrl, result.idToken, env.fetchFn);
+  } catch (err) {
+    // The token looked valid here but API Gateway refused it (revoked, a
+    // recreated pool, clock skew). Drop it; the next load signs in again.
+    // No automatic redirect, so a persistent 401 cannot loop.
+    if (err instanceof ApiError && err.status === 401) {
+      clearSession(env.store);
+      throw new Error(`${err.message}. Refresh the page to sign in again.`);
+    }
+    throw err;
+  }
 }

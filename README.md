@@ -32,6 +32,7 @@ Phase 1 runs and tests everything without an AWS account. Every AWS code path is
 - Go 1.27.4 or later (`api/go.mod`). On macOS, the `gow` file watcher may need the Xcode command-line tools.
 - Node.js 26 (`node --test` runs the TypeScript tests directly).
 - Docker, only for the image build.
+- `jq`, only for the `aws` mode example below.
 
 ### Run it
 
@@ -69,7 +70,7 @@ cd web && npm test && npm run build
 | `web/src/config.test.ts` | `config.json` is checked at startup, including the committed local file. |
 | `web/src/api.test.ts` | The SPA's runtime check of the `/api/me` body, the API URL join, and the `Authorization` header. |
 | `web/src/auth.test.ts` | Hosted UI PKCE: the RFC 7636 challenge, the authorize URL, the token exchange, state checks, cancelled sign-in, and expiry taken from the ID token's `exp`. |
-| `web/src/boot.test.ts` | The page bootstrap, end to end, with faked Cognito and API responses: dev mode, a successful callback, a failed callback, and the redirect. |
+| `web/src/boot.test.ts` | The page bootstrap, end to end, with faked Cognito and API responses: dev mode, a successful callback, a failed callback, the redirect, and a 401 that drops the stored token so the next load signs in again. |
 | `npm run build` | `tsc` type-checks everything, including the tests, before `vite build`. |
 
 ### Try `aws` mode by hand

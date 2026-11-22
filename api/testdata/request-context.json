@@ -1,0 +1,35 @@
+{
+  "accountId": "123456789012",
+  "apiId": "abc123defg",
+  "authorizer": {
+    "jwt": {
+      "claims": {
+        "aud": "1example23456789",
+        "auth_time": "1795000000",
+        "cognito:username": "a1b2c3d4-0000-4000-8000-000000000000",
+        "email": "person@example.com",
+        "email_verified": "true",
+        "exp": "1795003600",
+        "iat": "1795000000",
+        "iss": "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_EXAMPLE",
+        "sub": "a1b2c3d4-0000-4000-8000-000000000000",
+        "token_use": "id"
+      },
+      "scopes": null
+    }
+  },
+  "domainName": "abc123defg.execute-api.us-west-2.amazonaws.com",
+  "domainPrefix": "abc123defg",
+  "http": {
+    "method": "GET",
+    "path": "/api/me",
+    "protocol": "HTTP/1.1",
+    "sourceIp": "192.0.2.1",
+    "userAgent": "fixture"
+  },
+  "requestId": "fixture-request-id",
+  "routeKey": "GET /api/me",
+  "stage": "$default",
+  "time": "22/Nov/2026:00:00:00 +0000",
+  "timeEpoch": 1795000000000
+}

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -36,6 +38,50 @@ func wantEmail(t *testing.T, rr *httptest.ResponseRecorder, email string) {
 	if want := map[string]any{"email": email}; !reflect.DeepEqual(body, want) {
 		t.Errorf("body = %v, want %v", body, want)
 	}
+}
+
+// fixture returns testdata/request-context.json on one line, as the adapter
+// sends it.
+func fixture(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile("testdata/request-context.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, raw); err != nil {
+		t.Fatal(err)
+	}
+	return buf.String()
+}
+
+func TestMeAWS(t *testing.T) {
+	wantEmail(t, get(t, "aws", "GET", "/api/me", fixture(t)), "person@example.com")
+}
+
+func TestMeAWSRejects(t *testing.T) {
+	cases := map[string]string{
+		"missing header":    "",
+		"not JSON":          "not-json",
+		"empty object":      `{}`,
+		"no email claim":    `{"authorizer":{"jwt":{"claims":{"sub":"x"}}}}`,
+		"empty email":       `{"authorizer":{"jwt":{"claims":{"email":""}}}}`,
+		"non-string email":  `{"authorizer":{"jwt":{"claims":{"email":123}}}}`,
+		"outer wrapper key": `{"requestContext":{"authorizer":{"jwt":{"claims":{"email":"a@b.c"}}}}}`,
+	}
+	for name, reqCtx := range cases {
+		rr := get(t, "aws", "GET", "/api/me", reqCtx)
+		if rr.Code != 401 {
+			t.Errorf("%s: status = %d, want 401", name, rr.Code)
+		}
+		if strings.Contains(rr.Body.String(), "@") {
+			t.Errorf("%s: body %q leaks an email", name, rr.Body.String())
+		}
+	}
+}
+
+func TestMeDevIgnoresRequestContext(t *testing.T) {
+	wantEmail(t, get(t, "dev", "GET", "/api/me", fixture(t)), "dev@localhost")
 }
 
 func TestRootIsOpen(t *testing.T) {

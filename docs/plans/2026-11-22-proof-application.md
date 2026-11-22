@@ -379,7 +379,7 @@ Use a `memoryStore()` helper backed by a `Map`, and a `jwt(payload)` helper that
 
 ```ts
 test("codeChallenge matches RFC 7636 Appendix B", async () =>
-  assert.equal(await codeChallenge("dBjftJeZ4CVP-mJ92IqEdcWbE-VwmGgXJ4jAvIGfTbo"), "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"));
+  assert.equal(await codeChallenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"), "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"));
 test("randomString", () => { const a = randomString(); assert.match(a, /^[A-Za-z0-9_-]{43}$/); assert.notEqual(a, randomString()); });
 test("authorizeUrl", /* origin+pathname === cfg.cognitoDomainUrl + "/oauth2/authorize"; params response_type=code,
   client_id=client123, redirect_uri, scope="openid email", code_challenge_method=S256, code_challenge, state */);

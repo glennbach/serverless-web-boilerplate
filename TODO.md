@@ -5,14 +5,11 @@
 
 ## P1 — High Priority
 
-- [ ] **T001** Plan the proof application #docs #api #web
-  - Acceptance: Implementation plan written under docs/plans/ and linked here. It covers the Go API (dev and aws AUTH_MODE, including an aws-mode test with a fixture x-amzn-request-context header), the SPA (dev and cognito modes: config.json, Hosted UI PKCE redirect, Authorization header, runtime email check, tsc before vite build), the Dockerfile with the adapter pinned at v1.1.0, and the gow dev loop. The user has vetted it.
-  - Context: Source: docs/adr/0002-proof-application.md. Build every AWS code path locally with fixtures so the first deploy only has to prove infrastructure.
-
 - [ ] **T002** Implement the proof application #feature #api #web
   - Acceptance: Locally, go tool gow run . plus the Vite dev server shows dev@localhost, and a Go edit restarts the server. Go tests pass, including GET /api/me shape and aws-mode claim parsing from authorizer.jwt.claims.email (missing or empty claim rejected; unset AUTH_MODE rejected). npm run build runs tsc and passes. The container image builds with the pinned adapter.
-  - Context: Follows the T001 plan. Source: docs/adr/0002-proof-application.md. The plan may split this into smaller tasks.
+  - Context: Follows the T001 plan: docs/plans/2026-11-22-proof-application.md. Source: docs/adr/0002-proof-application.md. The plan may split this into smaller tasks.
   - Blocked by: T001
+  - Claimed: claude | 2026-11-22 | feat/proof-application
 
 - [ ] **T003** Allow the raw CloudFront URL for the dev environment in ADR 0001 #docs #adr
   - Acceptance: ADR 0001 Decision 8 records an exception: dev may use its *.cloudfront.net URL, including as the Cognito callback and logout URL, until the shared hosted zone and us-east-1 certificate exist. QA and prod still use custom domains.
@@ -46,3 +43,9 @@
   - Blocked by: T007
 
 ## Done (recent)
+
+- [x] **T001** Plan the proof application #docs #api #web
+  - Acceptance: Implementation plan written under docs/plans/ and linked here. It covers the Go API (dev and aws AUTH_MODE, including an aws-mode test with a fixture x-amzn-request-context header), the SPA (dev and cognito modes: config.json, Hosted UI PKCE redirect, Authorization header, runtime email check, tsc before vite build), the Dockerfile with the adapter pinned at v1.1.0, and the gow dev loop. The user has vetted it.
+  - Context: Source: docs/adr/0002-proof-application.md. Build every AWS code path locally with fixtures so the first deploy only has to prove infrastructure. Plan: docs/plans/2026-11-22-proof-application.md
+  - Outcome: completed
+  - Closed: 2026-11-22

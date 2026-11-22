@@ -7,9 +7,9 @@
 
 - [ ] **T002** Implement the proof application #feature #api #web
   - Acceptance: Locally, go tool gow run . plus the Vite dev server shows dev@localhost, and a Go edit restarts the server. Go tests pass, including GET /api/me shape and aws-mode claim parsing from authorizer.jwt.claims.email (missing or empty claim rejected; unset AUTH_MODE rejected). npm run build runs tsc and passes. The container image builds with the pinned adapter.
-  - Context: Follows the T001 plan: docs/plans/2026-11-22-proof-application.md. Source: docs/adr/0002-proof-application.md. The plan may split this into smaller tasks.
+  - Context: Follows the T001 plan: docs/plans/2026-11-22-proof-application.md. Source: docs/adr/0002-proof-application.md. Implemented on branch feat/proof-application; test instructions in README.md (Phase 1).
   - Blocked by: T001
-  - Claimed: claude | 2026-11-22 | feat/proof-application
+  - Review: 2026-11-22
 
 - [ ] **T003** Allow the raw CloudFront URL for the dev environment in ADR 0001 #docs #adr
   - Acceptance: ADR 0001 Decision 8 records an exception: dev may use its *.cloudfront.net URL, including as the Cognito callback and logout URL, until the shared hosted zone and us-east-1 certificate exist. QA and prod still use custom domains.

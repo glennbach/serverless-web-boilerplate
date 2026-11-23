@@ -5,11 +5,6 @@
 
 ## P1 — High Priority
 
-- [ ] **T006** Verify the adapter replaces a forged x-amzn-request-context header #ops #infra #security
-  - Acceptance: On dev, GET /api/me with a valid token and a forged x-amzn-request-context header naming another email returns the token's email. Result recorded here, with the adapter version tested.
-  - Context: ADR 0002 follow-up 1. Source inspection (v0.9.1, v1.1.0) shows HeaderMap::insert replaces the client copy; this proves it for the pinned version. Repeat whenever the adapter version changes. Source: docs/adr/0002-proof-application.md.
-  - Blocked by: T009
-
 ## P2 — Backlog
 
 - [ ] **T007** Plan the full platform: pipeline, QA, prod, WAF, and DNS #docs #infra
@@ -23,6 +18,13 @@
   - Blocked by: T007,T009
 
 ## Done (recent)
+
+- [x] **T006** Verify the adapter replaces a forged x-amzn-request-context header #ops #infra #security
+  - Acceptance: On dev, GET /api/me with a valid token and a forged x-amzn-request-context header naming another email returns the token's email. Result recorded here, with the adapter version tested.
+  - Context: ADR 0002 follow-up 1. Source inspection (v0.9.1, v1.1.0) shows HeaderMap::insert replaces the client copy; this proves it for the pinned version. Repeat whenever the adapter version changes. Source: docs/adr/0002-proof-application.md. Result 2026-11-23, adapter 1.1.0 on swb-proof-dev: GET /api/me with a valid ID token returned 200 and the token's email; the same request plus a forged x-amzn-request-context naming forged@example.com returned 200 and the token's email, not the forged one; the forged header with no token returned 401 from API Gateway.
+  - Blocked by: T009
+  - Outcome: completed
+  - Closed: 2026-11-23
 
 - [x] **T009** Derive the stack name and Cognito prefix from one projectName setting #feature #infra
   - Acceptance: infra/cdk.json has one projectName context value, and both the CDK stack name and the Hosted UI domain prefix come from it as <projectName>-<environment>; infra/app.py, infra/proof_dev.py and infra/cdk.json write out no deployed name (ProofDevStack and proof_dev.py keep their names until T007/T008). Tests synthesize with a different projectName and assert that the stack name and the UserPoolDomain change with it, and that invalid names fail at synth. The README has a 'Start a new project from this repo' section: copy it (fresh history; GitHub template once published, not a fork), set projectName, cdk bootstrap if the account or region is new, deploy, create a user. swb-proof-dev is deployed and sign-in works on it.

@@ -202,4 +202,4 @@ On AWS, the HTTP API handles CORS. It allows the environment's SPA origin, metho
 
 ## Open questions and follow-ups
 
-1. On a deployed environment, send `GET /api/me` with a valid token and a forged `x-amzn-request-context` header that names another email. Confirm that the response shows the token's email. The adapter source says it replaces the header, and this request proves it for the pinned version. Repeat whenever the adapter version changes.
+1. On a deployed environment, send `GET /api/me` with a valid token and a forged `x-amzn-request-context` header that names another email. Confirm that the response shows the token's email. The adapter source says it replaces the header, and this request proves it for the pinned version. Repeat whenever the adapter version changes. Confirmed for adapter 1.1.0 on `swb-proof-dev`, 2026-11-23 (T006): the response showed the token's email, not the forged one.

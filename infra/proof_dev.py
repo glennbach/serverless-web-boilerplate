@@ -4,9 +4,11 @@ See docs/plans/2026-11-22-dev-environment.md and ADR 0001 / ADR 0002.
 """
 
 import json
+import os
+import re
 
 import jsii
-from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack
+from aws_cdk import App, CfnOutput, Duration, Environment, RemovalPolicy, Stack
 from aws_cdk import aws_apigateway as apigw
 from aws_cdk import aws_apigatewayv2 as apigwv2
 from aws_cdk import aws_apigatewayv2_authorizers as authorizers
@@ -23,6 +25,44 @@ from constructs import Construct
 
 #: Every resource of this stack is created here (ADR 0001, Decision 10).
 HOME_REGION = "us-west-2"
+
+#: A valid ``projectName``: lowercase letters, digits, and hyphens, starting with a letter and
+#: not ending with a hyphen (ADR 0003).
+PROJECT_NAME = re.compile(r"[a-z]([a-z0-9-]*[a-z0-9])?")
+
+#: The longest ``projectName``: ``<name>-prod`` must fit Cognito's 63-character domain prefix.
+MAX_PROJECT_NAME = 58
+
+#: Words Cognito refuses anywhere in a Hosted UI domain prefix.
+RESERVED_WORDS = ("aws", "amazon", "cognito")
+
+
+def environment_name(project_name: object, environment: str) -> str:
+    """The name of one Environment of a Project: its stack name and its Hosted UI prefix (ADR 0003).
+
+    Args:
+        project_name: The ``projectName`` context value, unchecked.
+        environment: ``dev``, ``qa``, or ``prod``.
+
+    Raises:
+        ValueError: ``project_name`` is missing or would not make a valid prefix.
+
+    Returns:
+        ``<project_name>-<environment>``.
+    """
+    if not isinstance(project_name, str):
+        raise ValueError("projectName is not set in infra/cdk.json")
+    if not PROJECT_NAME.fullmatch(project_name):
+        raise ValueError(
+            f"projectName {project_name!r} must be lowercase letters, digits, and hyphens, "
+            "start with a letter, and not end with a hyphen"
+        )
+    if len(project_name) > MAX_PROJECT_NAME:
+        raise ValueError(f"projectName {project_name!r} is longer than {MAX_PROJECT_NAME} characters")
+    for word in RESERVED_WORDS:
+        if word in project_name:
+            raise ValueError(f"projectName {project_name!r} contains {word!r}, which Cognito refuses in a prefix")
+    return f"{project_name}-{environment}"
 
 #: One JSON object per API request. ``integrationRequestId`` is the Lambda
 #: request id, which joins an access-log entry to Lambda logs and X-Ray.
@@ -82,6 +122,8 @@ class ProofDevStack(Stack):
 
     The SPA is served from a private S3 bucket through CloudFront on its
     ``*.cloudfront.net`` URL.
+
+    Build it with ``dev_stack``, which names it ``<projectName>-dev``.
 
     Args:
         scope: The parent construct, normally the CDK ``App``.
@@ -266,3 +308,31 @@ class ProofDevStack(Stack):
         CfnOutput(self, "ApiAccessLogGroup", value=self.access_logs.log_group_name)
         CfnOutput(self, "ApiFunctionLogGroup", value=self.function.log_group.log_group_name)
         CfnOutput(self, "ApiFunctionName", value=self.function.function_name)
+
+
+# After ProofDevStack: Python 3.12 and 3.13 evaluate the return annotation when the function is defined.
+def dev_stack(app: App, *, api_dir: str, web_dist: str) -> ProofDevStack:
+    """Add the dev Environment to ``app``, named from its ``projectName`` context value.
+
+    Args:
+        app: The CDK app. ``cdk.json`` or ``cdk -c projectName=...`` supplies ``projectName``.
+
+    Keyword Args:
+        api_dir: The directory holding the API's ``Dockerfile``.
+        web_dist: The directory holding the built SPA (``npm run build``).
+
+    Raises:
+        ValueError: ``projectName`` is missing or invalid.
+
+    Returns:
+        The stack, named ``<projectName>-dev``, with the same Hosted UI prefix.
+    """
+    name = environment_name(app.node.try_get_context("projectName"), "dev")
+    return ProofDevStack(
+        app,
+        name,
+        env=Environment(account=os.environ.get("CDK_DEFAULT_ACCOUNT"), region=HOME_REGION),
+        api_dir=api_dir,
+        web_dist=web_dist,
+        cognito_domain_prefix=name,
+    )

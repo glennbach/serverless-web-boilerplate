@@ -1,7 +1,7 @@
 {
   "app": "uv run python app.py",
   "context": {
-    "cognitoDomainPrefix": "swb-proof-dev",
+    "projectName": "swb-proof",
     "@aws-cdk-containers/ecs-service-extensions:enableDefaultLogDriver": true,
     "@aws-cdk/aws-apigateway:authorizerChangeDeploymentLogicalId": true,
     "@aws-cdk/aws-apigateway:disableCloudWatchRole": true,

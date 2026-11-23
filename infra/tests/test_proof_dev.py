@@ -2,33 +2,39 @@ import json
 from pathlib import Path
 
 import pytest
-from aws_cdk import App, Environment
+from aws_cdk import App
 from aws_cdk.assertions import Capture, Match, Template
 
-from proof_dev import HOME_REGION, ProofDevStack
+from proof_dev import dev_stack, environment_name
 
 INFRA = Path(__file__).resolve().parent.parent
 
 
+def _app(tmp_path, **context):
+    """An App with the ``cdk.json`` context (the feature flags ``cdk deploy`` uses), updated by ``context``.
+
+    A ``None`` value removes that key, so ``projectName=None`` is an app with no project name.
+    """
+    merged = {**json.loads((INFRA / "cdk.json").read_text())["context"], **context}
+    return App(outdir=str(tmp_path / "cdk.out"), context={k: v for k, v in merged.items() if v is not None})
+
+
 @pytest.fixture
-def built(tmp_path):
-    """The stack, its template, and the cloud assembly directory, from a fake web/dist."""
+def dist(tmp_path):
+    """A fake web/dist."""
     dist = tmp_path / "dist"
     (dist / "assets").mkdir(parents=True)
     (dist / "index.html").write_text("<!doctype html><script src=/assets/app-abc123.js></script>")
     (dist / "assets" / "app-abc123.js").write_text("console.log(1)")
     (dist / "config.json").write_text('{"authMode": "dev", "apiBaseUrl": ""}')
-    # The same feature flags `cdk deploy` uses.
-    context = json.loads((INFRA / "cdk.json").read_text())["context"]
-    app = App(outdir=str(tmp_path / "cdk.out"), context=context)
-    stack = ProofDevStack(
-        app,
-        "ProofDev",
-        env=Environment(region=HOME_REGION),
-        api_dir=str(INFRA.parent / "api"),
-        web_dist=str(dist),
-        cognito_domain_prefix="test-prefix",
-    )
+    return dist
+
+
+@pytest.fixture
+def built(tmp_path, dist):
+    """The dev stack as app.py builds it, its template, and the cloud assembly directory."""
+    app = _app(tmp_path)
+    stack = dev_stack(app, api_dir=str(INFRA.parent / "api"), web_dist=str(dist))
     template = Template.from_stack(stack)
     return stack, template, Path(app.synth().directory)
 
@@ -82,7 +88,7 @@ def test_pool_schema(built):
 
 def test_prefix_domain_classic_hosted_ui(built):
     _, t, _ = built
-    t.has_resource_properties("AWS::Cognito::UserPoolDomain", {"Domain": "test-prefix", "ManagedLoginVersion": 1})
+    t.has_resource_properties("AWS::Cognito::UserPoolDomain", {"Domain": "swb-proof-dev", "ManagedLoginVersion": 1})
 
 
 def test_client_is_public_pkce_with_site_callback(built):
@@ -117,8 +123,8 @@ def test_function_runs_image_in_aws_mode_with_tracing(built):
 
 
 def test_function_image_is_arm64(built):
-    _, _, outdir = built
-    images = json.loads((outdir / "ProofDev.assets.json").read_text())["dockerImages"]
+    stack, _, outdir = built
+    images = json.loads((outdir / f"{stack.artifact_id}.assets.json").read_text())["dockerImages"]
     assert [i["source"]["platform"] for i in images.values()] == ["linux/arm64"]
 
 
@@ -253,3 +259,35 @@ def test_every_log_group_keeps_a_month_and_is_destroyed_with_the_stack(built):
     for name, group in groups.items():
         assert group.get("DeletionPolicy") == "Delete", name
         assert group["Properties"].get("RetentionInDays") == 30, name
+
+
+def test_checked_in_project_name_names_the_dev_stack(built):
+    stack, _, _ = built
+    context = json.loads((INFRA / "cdk.json").read_text())["context"]
+    assert context["projectName"] == "swb-proof" and "cognitoDomainPrefix" not in context
+    assert stack.stack_name == "swb-proof-dev"
+
+
+def test_another_project_name_renames_stack_and_prefix(tmp_path, dist):
+    stack = dev_stack(_app(tmp_path, projectName="acme-shop"), api_dir=str(INFRA.parent / "api"), web_dist=str(dist))
+    assert stack.stack_name == "acme-shop-dev"
+    Template.from_stack(stack).has_resource_properties("AWS::Cognito::UserPoolDomain", {"Domain": "acme-shop-dev"})
+
+
+@pytest.mark.parametrize("name", ["a", "swb-proof", "a1-b2", "a" * 58])
+def test_valid_project_names(name):
+    assert environment_name(name, "prod") == f"{name}-prod"
+
+
+@pytest.mark.parametrize(
+    "name, rule",
+    [
+        (None, "projectName"), ("", "projectName"), ("MyApp", "lowercase"), ("my_app", "lowercase"),
+        ("1app", "lowercase"), ("app-", "lowercase"), ("a" * 59, "58"),
+        ("laws-firm", "aws"), ("amazonia", "amazon"), ("cognito-x", "cognito"),
+    ],
+)
+def test_invalid_project_names_fail_at_synth(tmp_path, dist, name, rule):
+    # Through dev_stack, as app.py runs it; None means projectName is absent from the context.
+    with pytest.raises(ValueError, match=rule):
+        dev_stack(_app(tmp_path, projectName=name), api_dir=str(INFRA.parent / "api"), web_dist=str(dist))

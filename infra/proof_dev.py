@@ -3,15 +3,77 @@
 See docs/plans/2026-11-22-dev-environment.md and ADR 0001 / ADR 0002.
 """
 
-from aws_cdk import RemovalPolicy, Stack
+import json
+
+import jsii
+from aws_cdk import Duration, RemovalPolicy, Stack
+from aws_cdk import aws_apigateway as apigw
+from aws_cdk import aws_apigatewayv2 as apigwv2
+from aws_cdk import aws_apigatewayv2_authorizers as authorizers
+from aws_cdk import aws_apigatewayv2_integrations as integrations
 from aws_cdk import aws_cloudfront as cloudfront
 from aws_cdk import aws_cloudfront_origins as origins
 from aws_cdk import aws_cognito as cognito
+from aws_cdk import aws_ecr_assets as ecr_assets
+from aws_cdk import aws_lambda as lambda_
+from aws_cdk import aws_logs as logs
 from aws_cdk import aws_s3 as s3
 from constructs import Construct
 
 #: Every resource of this stack is created here (ADR 0001, Decision 10).
 HOME_REGION = "us-west-2"
+
+#: One JSON object per API request. ``integrationRequestId`` is the Lambda
+#: request id, which joins an access-log entry to Lambda logs and X-Ray.
+#: Never add the email or the token.
+ACCESS_LOG_FIELDS = {
+    "requestId": "$context.requestId",
+    "integrationRequestId": "$context.integration.requestId",
+    "ip": "$context.identity.sourceIp",
+    "requestTime": "$context.requestTime",
+    "routeKey": "$context.routeKey",
+    "path": "$context.path",
+    "status": "$context.status",
+    "responseLength": "$context.responseLength",
+    "responseLatency": "$context.responseLatency",
+    "integrationStatus": "$context.integrationStatus",
+    "integrationError": "$context.integrationErrorMessage",
+    "authorizerError": "$context.authorizer.error",
+}
+
+
+@jsii.implements(apigwv2.IAccessLogSettings)
+class _AccessLogSettings:
+    """Access logging for an ``HttpStage``: ``ACCESS_LOG_FIELDS`` as JSON, to one destination.
+
+    ``IAccessLogSettings`` is a jsii interface, not a struct, so Python needs a
+    class that implements it.
+
+    Args:
+        destination: Where API Gateway writes the access log.
+    """
+
+    def __init__(self, destination: apigwv2.IAccessLogDestination) -> None:
+        #: Where API Gateway writes the access log.
+        self._destination = destination
+
+    @property
+    def destination(self) -> apigwv2.IAccessLogDestination:
+        """Where API Gateway writes the access log.
+
+        Returns:
+            The destination given to the constructor.
+        """
+        return self._destination
+
+    @property
+    def format(self) -> apigw.AccessLogFormat:
+        """One JSON object per request, with the keys of ``ACCESS_LOG_FIELDS``.
+
+        Returns:
+            The custom access-log format.
+        """
+        return apigw.AccessLogFormat.custom(json.dumps(ACCESS_LOG_FIELDS))
 
 
 class ProofDevStack(Stack):
@@ -102,4 +164,51 @@ class ProofDevStack(Stack):
                 logout_urls=[self.site_url + "/"],
             ),
             supported_identity_providers=[cognito.UserPoolClientIdentityProvider.COGNITO],
+        )
+
+        #: The Go API image on Lambda, reading the user from the authorizer's claims.
+        self.function = lambda_.DockerImageFunction(
+            self,
+            "Api",
+            code=lambda_.DockerImageCode.from_image_asset(api_dir, platform=ecr_assets.Platform.LINUX_ARM64),
+            architecture=lambda_.Architecture.ARM_64,
+            memory_size=256,
+            timeout=Duration.seconds(10),
+            environment={"AUTH_MODE": "aws"},
+            tracing=lambda_.Tracing.ACTIVE,
+            log_group=logs.LogGroup(
+                self, "ApiLogs", retention=logs.RetentionDays.ONE_MONTH, removal_policy=RemovalPolicy.DESTROY
+            ),
+        )
+        #: The HTTP API. It answers CORS preflights itself; Go sets no CORS headers.
+        self.api = apigwv2.HttpApi(
+            self,
+            "HttpApi",
+            create_default_stage=False,
+            cors_preflight=apigwv2.CorsPreflightOptions(
+                allow_origins=[self.site_url],
+                allow_methods=[apigwv2.CorsHttpMethod.GET],
+                allow_headers=["authorization"],
+                max_age=Duration.hours(1),
+            ),
+        )
+        self.api.add_routes(
+            path="/api/me",
+            methods=[apigwv2.HttpMethod.GET],
+            integration=integrations.HttpLambdaIntegration("Me", self.function),
+            authorizer=authorizers.HttpUserPoolAuthorizer(
+                "Cognito", self.user_pool, user_pool_clients=[self.user_pool_client]
+            ),
+        )
+        #: The API's access log group.
+        self.access_logs = logs.LogGroup(
+            self, "ApiAccessLogs", retention=logs.RetentionDays.ONE_MONTH, removal_policy=RemovalPolicy.DESTROY
+        )
+        # Only HttpStage takes access_log_settings, so the $default stage is explicit.
+        apigwv2.HttpStage(
+            self,
+            "DefaultStage",
+            http_api=self.api,
+            auto_deploy=True,
+            access_log_settings=_AccessLogSettings(apigwv2.LogGroupLogDestination(self.access_logs)),
         )

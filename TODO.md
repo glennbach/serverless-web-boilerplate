@@ -5,11 +5,6 @@
 
 ## P1 — High Priority
 
-- [ ] **T003** Allow the raw CloudFront URL for the dev environment in ADR 0001 #docs #adr
-  - Acceptance: ADR 0001 Decision 8 records an exception: dev may use its *.cloudfront.net URL, including as the Cognito callback and logout URL, until the shared hosted zone and us-east-1 certificate exist. QA and prod still use custom domains.
-  - Context: Lets the first cloud deploy skip DNS and certificates. Source: docs/adr/0001-serverless-go-platform-architecture.md.
-  - Review: 2026-11-22
-
 - [ ] **T004** Plan a single dev environment deployed with cdk deploy #docs #infra
   - Acceptance: Plan written under docs/plans/ and linked here. Python CDK in infra/ deploys by hand, one environment, entirely in us-west-2 with nothing created in us-east-1: Cognito User Pool with email on the ID token, Hosted UI app client with PKCE, HTTP API with JWT authorizer and CORS (SPA origin, GET, Authorization), Lambda from the ECR image with AUTH_MODE=aws and X-Ray active tracing, API access logs, S3 plus CloudFront for the SPA, and the deployed config.json with a short cache lifetime. No pipeline, WAF, Route 53, QA, or prod. The user has vetted it.
   - Context: Phase 2a. Proves the app in the cloud before building the full platform. Cognito attributes cannot change after pool creation, so settle the schema in the plan. Region: us-west-2 is the home region. Only CloudFront's ACM certificate, a CloudFront WAF web ACL, and a Cognito custom-domain certificate must be in us-east-1; this phase uses none of them (the dev *.cloudfront.net URL per T003, the Cognito prefix domain, no WAF), so it needs no cross-region stacks. The CloudFront distribution itself can live in the us-west-2 stack. Sources: docs/adr/0001-serverless-go-platform-architecture.md, docs/adr/0002-proof-application.md.
@@ -38,6 +33,12 @@
   - Blocked by: T007
 
 ## Done (recent)
+
+- [x] **T003** Allow the raw CloudFront URL for the dev environment in ADR 0001 #docs #adr
+  - Acceptance: ADR 0001 Decision 8 records an exception: dev may use its *.cloudfront.net URL, including as the Cognito callback and logout URL, until the shared hosted zone and us-east-1 certificate exist. QA and prod still use custom domains.
+  - Context: Lets the first cloud deploy skip DNS and certificates. Source: docs/adr/0001-serverless-go-platform-architecture.md.
+  - Outcome: completed
+  - Closed: 2026-11-22
 
 - [x] **T002** Implement the proof application #feature #api #web
   - Acceptance: Locally, go tool gow run . plus the Vite dev server shows dev@localhost, and a Go edit restarts the server. Go tests pass, including GET /api/me shape and aws-mode claim parsing from authorizer.jwt.claims.email (missing or empty claim rejected; unset AUTH_MODE rejected). npm run build runs tsc and passes. The container image builds with the pinned adapter.

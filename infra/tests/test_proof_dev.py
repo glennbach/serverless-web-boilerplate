@@ -221,3 +221,26 @@ def test_outputs(built):
         "ApiAccessLogGroup", "ApiFunctionLogGroup", "ApiFunctionName",
     ):
         t.has_output(name, {})
+
+
+def test_sign_in_is_case_insensitive(built):
+    _, t, _ = built
+    t.has_resource_properties("AWS::Cognito::UserPool", {"UsernameConfiguration": {"CaseSensitive": False}})
+
+
+def test_client_hides_whether_a_user_exists(built):
+    _, t, _ = built
+    t.has_resource_properties("AWS::Cognito::UserPoolClient", {"PreventUserExistenceErrors": "ENABLED"})
+
+
+def test_each_deployment_uploads_the_right_files(built):
+    _, t, outdir = built
+
+    def files(deployment):
+        """The files a deployment uploads: its staged assets, keyed by ``<hash>.zip``."""
+        dirs = [outdir / f"asset.{key.removesuffix('.zip')}" for key in deployment["Properties"]["SourceObjectKeys"]]
+        return {p.relative_to(d).as_posix() for d in dirs for p in d.rglob("*") if p.is_file()}
+
+    by_cache = {d["Properties"]["SystemMetadata"]["cache-control"]: files(d) for d in _deployments(t)}
+    assert by_cache["no-cache"] == {"index.html", "config.json"}
+    assert by_cache["public, max-age=31536000, immutable"] == {"assets/app-abc123.js"}

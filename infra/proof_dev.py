@@ -131,13 +131,14 @@ class ProofDevStack(Stack):
         #: The site origin, ``https://<distribution>.cloudfront.net``, with no trailing slash.
         self.site_url = f"https://{self.distribution.distribution_domain_name}"
 
-        # Sign-in alias and the email attribute's required/mutable flags are
+        # Sign-in alias, case sensitivity, and the email attribute's required/mutable flags are
         # fixed at pool creation; changing them means a new pool.
         #: The dev User Pool. Email is the username and is on the ID token.
         self.user_pool = cognito.UserPool(
             self,
             "Users",
             sign_in_aliases=cognito.SignInAliases(email=True),
+            sign_in_case_sensitive=False,
             standard_attributes=cognito.StandardAttributes(
                 email=cognito.StandardAttribute(required=True, mutable=True)
             ),
@@ -158,6 +159,7 @@ class ProofDevStack(Stack):
         self.user_pool_client = self.user_pool.add_client(
             "Spa",
             generate_secret=False,
+            prevent_user_existence_errors=True,
             o_auth=cognito.OAuthSettings(
                 flows=cognito.OAuthFlows(authorization_code_grant=True),
                 scopes=[cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL],

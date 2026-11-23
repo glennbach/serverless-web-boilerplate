@@ -10,6 +10,7 @@ from proof_dev import HOME_REGION, ProofDevStack
 #: The repository root, which holds ``api/`` and ``web/``.
 REPO = Path(__file__).resolve().parent.parent
 
+#: The CDK app; ``cdk`` synthesizes it by running this file.
 app = App()
 ProofDevStack(
     app,

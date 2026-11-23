@@ -6,7 +6,7 @@
 
 **Architecture:** One Python CDK app in `infra/` with one stack, `ProofDev`, in `us-west-2`. The stack holds the S3 bucket and CloudFront distribution for the SPA, the Cognito User Pool with its prefix domain and Hosted UI client, the Lambda built from `api/Dockerfile`, the HTTP API with a JWT authorizer, CORS, and access logs, and two `BucketDeployment`s that upload the built SPA and write `config.json` from the stack's own values. Nothing is created in `us-east-1`.
 
-**Tech Stack:** AWS CDK v2 (`aws-cdk-lib`, Python), CDK CLI 2.1142, `uv` for the Python environment, `pytest` with `aws_cdk.assertions`, Docker for the image asset.
+**Tech Stack:** AWS CDK v2 (`aws-cdk-lib`, Python), CDK CLI 2.1149.0 or later (older CLIs cannot read the assembly that `aws-cdk-lib` 2.278 writes), `uv` for the Python environment, `pytest` with `aws_cdk.assertions`, Docker for the image asset.
 
 **Spec:** T004's acceptance in `TODO.md`; [ADR 0001](../adr/0001-serverless-go-platform-architecture.md) (Decisions 2, 6, 7, 8, 10) and [ADR 0002](../adr/0002-proof-application.md) (Decisions 3, 4, 5). The application this deploys is [the phase 1 plan](2026-11-22-proof-application.md). T005 executes this plan, Task 5 is its acceptance.
 
@@ -33,8 +33,9 @@
 | `email` standard attribute | `required=True`, `mutable=True` | Every user has the claim the page shows. A user can change it. |
 | Custom attributes | none | The proof reads only `email`. |
 | Region | `us-west-2` | Pools cannot move (ADR 0001, Decision 10). |
+| Username case | `sign_in_case_sensitive=False` | `Alice@Example.com` and `alice@example.com` are one user. Case sensitivity cannot change after creation. |
 
-Mutable, and chosen for now: `auto_verify` email, `self_sign_up_enabled=False` (T005 creates users with `admin-create-user`; a public dev URL should not take sign-ups), `account_recovery=EMAIL_ONLY`, MFA off, `feature_plan=FeaturePlan.LITE`, classic Hosted UI (`ManagedLoginVersion.CLASSIC_HOSTED_UI`), default token lifetimes (ID token 1 hour). The client sets no `read_attributes`, so every standard attribute, including `email`, is readable and goes on the ID token with the `email` scope.
+Mutable, and chosen for now: `prevent_user_existence_errors=True` on the client (the public Hosted UI does not reveal which emails have accounts), `auto_verify` email, `self_sign_up_enabled=False` (T005 creates users with `admin-create-user`; a public dev URL should not take sign-ups), `account_recovery=EMAIL_ONLY`, MFA off, `feature_plan=FeaturePlan.LITE`, classic Hosted UI (`ManagedLoginVersion.CLASSIC_HOSTED_UI`), default token lifetimes (ID token 1 hour). The client sets no `read_attributes`, so every standard attribute, including `email`, is readable and goes on the ID token with the `email` scope.
 
 **Other choices.**
 - **Stack.** One stack, `ProofDev`, in `infra/proof_dev.py`. `app.py` only instantiates it. The stack takes the paths it uploads as arguments so tests can pass a fake `web/dist`.
@@ -390,7 +391,7 @@ Expected: all pass, and `web/dist/index.html` exists.
 
 - [ ] **Step 3: Bootstrap and deploy**
 
-Run: `cd infra && uv run cdk bootstrap aws://$(aws sts get-caller-identity --query Account --output text)/us-west-2 && uv run cdk deploy ProofDev`
+Run: `cd infra && cdk --version` (must be 2.1149.0 or later; otherwise use `npx aws-cdk@2.1149.0` in place of `cdk`), then `cdk bootstrap aws://$(aws sts get-caller-identity --query Account --output text)/us-west-2 && cdk deploy ProofDev`
 Expected: `ProofDev` reaches `CREATE_COMPLETE` and prints the eight outputs. If the Cognito domain prefix is taken, change `cognitoDomainPrefix` in `infra/cdk.json` and deploy again. Export them for the steps below: `SITE`, `API`, `POOL`, `ACCESS_LOGS`, `FN_LOGS`, `FN`.
 
 - [ ] **Step 4: Create a test user**
@@ -410,8 +411,8 @@ Expected: `204`, `access-control-allow-origin: $SITE`, `access-control-allow-hea
 
 - [ ] **Step 7: No token is rejected before Lambda**
 
-Run: `curl -si "$API/api/me"`, then after a minute `aws logs tail "$ACCESS_LOGS" --region us-west-2 --since 5m`
-Expected: `401` with body `{"message":"Unauthorized"}` (API Gateway's, not Go's `unauthorized`). The access log entry for that `requestId` has `"status":"401"` and `"integrationRequestId":"-"`, and `aws logs tail "$FN_LOGS" --since 5m` shows no `rejected /api/me` line for it.
+Run: `curl -si "$API/api/me" -H "Origin: $SITE"`, then after a minute `aws logs tail "$ACCESS_LOGS" --region us-west-2 --since 5m`
+Expected: `401` with body `{"message":"Unauthorized"}` (API Gateway's, not Go's `unauthorized`), carrying `access-control-allow-origin: $SITE` (without it the SPA sees a network error instead of a 401 and never drops a dead session; record it in T005 if missing). The access log entry for that `requestId` has `"status":"401"` and `"integrationRequestId":"-"`, and `aws logs tail "$FN_LOGS" --since 5m` shows no `rejected /api/me` line for it.
 
 - [ ] **Step 8: Traces and access logs**
 

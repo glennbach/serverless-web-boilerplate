@@ -4,6 +4,7 @@
 - **Date:** 2026-11-21
 - **Amended:** 2026-11-21. Scope is the proof, not a Django replacement. Dropped Aurora, the Lambda VPC, and the Cognito Identity Pool. Amazon API Gateway is an HTTP API, and it is used only when deployed. Runtime configuration of the SPA is decided in [ADR 0002](0002-proof-application.md).
 - **Revised:** 2026-11-21, after review. API Gateway answers CORS. X-Ray traces Lambda only. Idle cost has a fixed WAF and Route 53 baseline. The database decision no longer cites an Aurora capacity floor.
+- **Amended:** 2026-11-22. Added Decision 10: the home region is `us-west-2`.
 - **Author:** Glenn Bach
 - **Scope:** AWS platform for the proof, a Go API and a React SPA with no product domain. The application itself is [ADR 0002](0002-proof-application.md).
 
@@ -29,6 +30,7 @@ The deployment goals are:
 - **Data:** None. The proof has no database.
 - **Delivery:** AWS CodePipeline and CodeBuild. Images are stored in Amazon ECR.
 - **Operations:** CloudWatch structured logs, API Gateway access logs and metrics, and AWS X-Ray tracing of Lambda. Secrets Manager and SSM Parameter Store are the practice when a secret exists. This proof has none.
+- **Region:** `us-west-2`, except for the few CloudFront-related resources AWS requires in `us-east-1`. See Decision 10.
 
 Compute is serverless and costs nothing at idle. The edge and DNS resources bill a small fixed monthly amount. See the cost baseline under Consequences.
 
@@ -222,7 +224,7 @@ This proof has no secret values. The Cognito client id, User Pool id, Hosted UI 
 
 **Consequences.**
 - (+) Consistent URLs and edge protection.
-- (−) A WAF web ACL used with CloudFront must be created in `us-east-1`, and so must the ACM certificate. The CDK stacks need to handle this across regions.
+- (−) A WAF web ACL used with CloudFront must be created in `us-east-1`, and so must the ACM certificate. The CDK stacks need to handle this across regions. See Decision 10.
 - (−) The shared hosted zone is a resource all environments depend on and must be deployed and protected separately.
 - (−) The browser calls API Gateway on a separate origin from the SPA, and the `Authorization` header makes the browser send a preflight `OPTIONS` first. The HTTP API's CORS configuration allows that environment's SPA origin, method `GET`, and header `Authorization`. API Gateway answers the preflight itself, with no `OPTIONS` route. Go sets no CORS headers, because API Gateway ignores backend CORS headers once CORS is configured. See ADR 0002.
 
@@ -244,6 +246,34 @@ This proof has no secret values. The Cognito client id, User Pool id, Hosted UI 
 - (+) Local work needs no AWS account activity.
 - (−) Three copies of the remaining stack. There is no database floor under them.
 - (−) Behavior that depends on API Gateway or Cognito is invisible until a deploy.
+
+---
+
+### 10. Home region: `us-west-2`
+
+**Decision.** Every environment deploys to `us-west-2` (Oregon). The exceptions are the resources AWS accepts only in `us-east-1` (N. Virginia), because CloudFront is managed from there:
+- the ACM certificate for a CloudFront custom domain,
+- a WAF web ACL attached to CloudFront, with its rule groups and IP sets, and the CloudWatch log group for its logs,
+- the ACM certificate for a Cognito custom domain, if the Hosted UI ever gets one.
+
+Everything else runs in `us-west-2`: the Cognito User Pools, the HTTP API, Lambda, ECR, the S3 bucket, CloudWatch logs and X-Ray traces, and CodePipeline and CodeBuild. The CloudFront distribution is global. It can be defined in a `us-west-2` stack and refer to the `us-east-1` certificate and web ACL by ARN. Route 53 has no region.
+
+**Rationale.**
+- `us-west-2` is close to the users, so API calls, which go to Lambda in the home region, travel a short distance. CloudFront serves the SPA from edge locations wherever the home region is.
+- `us-west-2` is a mature region that offers every service this platform uses.
+- In the author's experience, `us-east-1` has had more service disruptions. Only resources that AWS requires there go there.
+
+**Alternatives considered.**
+- *`us-east-1` for everything:* One region and no cross-region stacks, and new AWS features often arrive there first. It is farther from the users, and the author's experience of its reliability is worse.
+- *More than one region:* Nothing in this proof needs regional failover, and Cognito User Pools are regional.
+
+**Consequences.**
+- (+) Lower API latency for the users.
+- (+) Phase 2a, one dev environment on its `*.cloudfront.net` URL with no WAF and no custom domain, needs no `us-east-1` resources.
+- (−) Once WAF and custom domains arrive, the CDK has a small `us-east-1` stack beside the `us-west-2` stacks. See open question 2.
+- (−) CloudFront's CloudWatch metrics appear in `us-east-1`. Operators look there for edge metrics and in `us-west-2` for everything else.
+- (−) User Pools cannot move between regions. A later change of home region means new pools, and users sign up again.
+- **Note:** A custom domain on the HTTP API, if one is added, needs its ACM certificate in `us-west-2`, the API's own region, not `us-east-1`.
 
 ---
 
@@ -277,6 +307,6 @@ Not included: per-request charges (WAF, CloudFront, API Gateway, Lambda), ECR im
 ## Open questions and follow-ups
 
 1. Federate campus SSO into the Cognito User Pools?
-2. Settle the CDK stack layout: one shared stack for DNS and the `us-east-1` resources, plus one app stack per environment.
+2. Settle the CDK stack layout: one shared stack for DNS and the `us-east-1` resources (Decision 10), plus one `us-west-2` app stack per environment.
 3. How long to keep logs in each environment?
 4. Use the CloudFront flat-rate Free plan ($0 per distribution)? It includes WAF (5 rules) and DNS, capped at 1M requests and 100 GB per month, with no overage charges. That could remove most of the WAF baseline. Check it against Decision 8's custom domains and `us-east-1` resources before adopting it.

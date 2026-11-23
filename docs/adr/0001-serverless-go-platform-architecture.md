@@ -214,9 +214,10 @@ This proof has no secret values. The Cognito client id, User Pool id, Hosted UI 
 **Decision.**
 - An AWS WAF web ACL sits in front of the CloudFront distribution for the public React app.
 - Route 53 provides a custom domain. **One shared hosted zone** holds a subdomain for each environment (dev, QA, prod), each pointing at that environment's CloudFront distribution.
-- Raw CloudFront URLs are not used.
+- QA and prod do not use raw CloudFront URLs.
+- **Exception for dev:** Until the shared hosted zone and the `us-east-1` ACM certificate exist, dev may use its `*.cloudfront.net` URL, including as its Cognito callback and logout URL. Dev moves to its custom subdomain once they exist.
 
-**Rationale.** WAF provides managed protection at the edge. Custom domains give stable, readable URLs and work with the Cognito callback and logout URLs.
+**Rationale.** WAF provides managed protection at the edge. Custom domains give stable, readable URLs and work with the Cognito callback and logout URLs. The dev exception lets the first cloud deploy go ahead without waiting for DNS and certificates.
 
 **Alternatives considered.**
 - *A separate hosted zone per environment:* Needs extra delegation with little benefit for this app.
@@ -226,6 +227,7 @@ This proof has no secret values. The Cognito client id, User Pool id, Hosted UI 
 - (+) Consistent URLs and edge protection.
 - (−) A WAF web ACL used with CloudFront must be created in `us-east-1`, and so must the ACM certificate. The CDK stacks need to handle this across regions. See Decision 10.
 - (−) The shared hosted zone is a resource all environments depend on and must be deployed and protected separately.
+- (−) When dev moves to its custom subdomain, its Cognito callback and logout URLs and its API CORS origin change, and anyone using the old `*.cloudfront.net` URL has to switch.
 - (−) The browser calls API Gateway on a separate origin from the SPA, and the `Authorization` header makes the browser send a preflight `OPTIONS` first. The HTTP API's CORS configuration allows that environment's SPA origin, method `GET`, and header `Authorization`. API Gateway answers the preflight itself, with no `OPTIONS` route. Go sets no CORS headers, because API Gateway ignores backend CORS headers once CORS is configured. See ADR 0002.
 
 ---
@@ -237,7 +239,7 @@ This proof has no secret values. The Cognito client id, User Pool id, Hosted UI 
 - **Dev on AWS:** A shared environment that deploys automatically on push to `main`, for testing real AWS behavior, including the JWT authorizer.
 - **QA on AWS:** Pre-production validation.
 - **Prod on AWS:** Promoted with manual approval.
-- Each environment has its own Cognito User Pool. The Route 53 hosted zone is shared.
+- Each environment has its own Cognito User Pool. The Route 53 hosted zone is shared. Dev may start on its raw CloudFront URL; see Decision 8.
 
 **Rationale.** Local development keeps iteration fast and does not depend on AWS. The shared dev environment catches problems that only show up on AWS, such as IAM and authorizer behavior, before QA.
 

@@ -21,6 +21,16 @@ The proof: a one-page React SPA that calls a Go API and shows the signed-in user
 | 2a | One dev environment on AWS, deployed by hand with `cdk deploy` | T003–T006 | Deployed and proven end to end (T005) ([plan](docs/plans/2026-11-22-dev-environment.md)) |
 | 2b | Pipeline, QA, prod, WAF, and DNS | T007, T008 | Not started |
 
+## Start a new project from this repo
+
+A copy of this repository deploys as its own project, with its own stacks, User Pool, and URLs, once you change one value.
+
+1. **Copy the repository with fresh history.** Clone it, delete `.git`, and run `git init`. Once this repository is on GitHub and marked as a template repository, "Use this template" does the same. Don't fork it: a fork shares this repository's history, and its pull requests target this repository by default.
+2. **Set `projectName` in `infra/cdk.json` before the first deploy.** Use lowercase letters, digits, and hyphens. Start with a letter, don't end with a hyphen, and use at most 58 characters. Don't include `aws`, `amazon`, or `cognito` (see [ADR 0003](docs/adr/0003-deployed-names-from-project-name.md)). Choose a distinctive name, because Hosted UI prefixes are unique per region across all AWS accounts. A copy that keeps `swb-proof` would update this project's stacks in the same account.
+3. **Bootstrap the account** if it has not been bootstrapped in `us-west-2`: `cdk bootstrap aws://<account>/us-west-2`.
+4. **Deploy:** build the SPA and run `cdk deploy <projectName>-dev`, as described under [Deploy](#deploy).
+5. **Create a user** with the `admin-create-user` command under [Deploy](#deploy).
+
 ---
 
 ## Phase 1: the proof application on a laptop
@@ -118,7 +128,7 @@ The real Hosted UI and token endpoint, the API Gateway JWT authorizer and CORS, 
 
 ## Phase 2a: the dev environment
 
-`infra/` is one CDK stack, `ProofDev`, in `us-west-2`. Nothing is created in `us-east-1`. The stack contains:
+`infra/` is one CDK stack, `swb-proof-dev` (`<projectName>-dev`, [ADR 0003](docs/adr/0003-deployed-names-from-project-name.md)), in `us-west-2`. Nothing is created in `us-east-1`. The stack contains:
 
 - an S3 bucket and a CloudFront distribution for the SPA, on its `*.cloudfront.net` URL
 - a Cognito User Pool, with its Hosted UI prefix domain and the SPA's PKCE client
@@ -150,6 +160,7 @@ cd infra && uv run pytest -q
 - The JSON access-log format.
 - The two SPA uploads and their cache headers, and that the local `config.json` is never uploaded.
 - The stack outputs.
+- The stack name and the Hosted UI prefix come from `projectName`, and an invalid name fails at synth.
 
 ### Deploy
 
@@ -158,12 +169,12 @@ aws sts get-caller-identity                     # the intended account
 cd web && npm ci && npm test && npm run build    # one bundle for every environment
 cd ../infra && uv run pytest -q
 cdk bootstrap aws://$(aws sts get-caller-identity --query Account --output text)/us-west-2   # once per account
-cdk deploy ProofDev
+cdk deploy swb-proof-dev
 ```
 
 The deploy prints `SiteUrl`, `ApiUrl`, `UserPoolId`, `UserPoolClientId`, `CognitoDomainUrl`, `ApiAccessLogGroup`, `ApiFunctionLogGroup`, and `ApiFunctionName`.
 
-Hosted UI prefixes are unique per region across all AWS accounts. If `swb-proof-dev` is taken, change `cognitoDomainPrefix` in `infra/cdk.json`.
+Hosted UI prefixes are unique per region across all AWS accounts. If `swb-proof-dev` is taken, change `projectName` in `infra/cdk.json`. That renames the stack too.
 
 Self sign-up is off. Create a user, and Cognito emails a temporary password:
 
@@ -178,12 +189,12 @@ Open `SiteUrl`, sign in, and set a new password. The page shows the email. The f
 ### Tear down
 
 ```bash
-cd infra && cdk destroy ProofDev
+cd infra && cdk destroy swb-proof-dev
 ```
 
 This removes the bucket, the pool and its users, the API, and the stack's log groups. Some things remain:
 
 - The `CDKToolkit` bootstrap stack, with the image and file assets it holds.
-- One small log group, `/aws/lambda/ProofDev-CustomS3AutoDeleteObjects…`. CDK's bucket-emptying handler creates it at runtime, and the stack does not own it.
+- One small log group, `/aws/lambda/swb-proof-dev-CustomS3AutoDeleteObjects…`. CDK's bucket-emptying handler creates it at runtime, and the stack does not own it.
 
 `cdk destroy` synthesizes the app first, so `web/dist` must exist. Run `npm run build` in `web/` first.

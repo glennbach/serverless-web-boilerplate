@@ -60,7 +60,7 @@ Mutable, and chosen for now: `prevent_user_existence_errors=True` on the client 
   | `authorizerError` | `$context.authorizer.error` |
 
 - **Log retention.** One month for the access log group and the Lambda log group (ADR 0001 open question 3 stays open for QA and prod).
-- **Dev teardown.** Bucket (`auto_delete_objects=True`), User Pool, and log groups use `RemovalPolicy.DESTROY`. `cdk destroy` leaves nothing behind except the bootstrap stack.
+- **Dev teardown.** Bucket (`auto_delete_objects=True`), User Pool, and log groups use `RemovalPolicy.DESTROY`. The two `BucketDeployment`s share one such log group (otherwise CDK makes theirs `Retain` with 731-day retention). `cdk destroy` leaves only the bootstrap stack and the runtime-created log group of CDK's bucket auto-delete handler.
 - **CloudFront.** S3 origin through Origin Access Control (`S3BucketOrigin.with_origin_access_control`), bucket fully private, `redirect-to-https`, managed `CACHING_OPTIMIZED` policy (query strings are not forwarded; the SPA reads `?code=` in the browser), `default_root_object="index.html"`, `PRICE_CLASS_100`. No error-page rewrites: the SPA has one page and the callback is `/`.
 - **Caching.** Two deployments to the same bucket, both `prune=False` (the pattern in the `aws-s3-deployment` README):
   - *Assets*: `web/dist` minus `index.html` and `config.json`, `Cache-Control: public, max-age=31536000, immutable`. Vite hashes these names.

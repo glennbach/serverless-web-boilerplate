@@ -218,10 +218,15 @@ class ProofDevStack(Stack):
 
         # Two deployments to one bucket, both prune=False so neither deletes the
         # other's files. The local web/dist/config.json (authMode dev) is in neither.
+        # They share one handler Lambda, so they share its log group too.
+        deploy_logs = logs.LogGroup(
+            self, "SpaDeployLogs", retention=logs.RetentionDays.ONE_MONTH, removal_policy=RemovalPolicy.DESTROY
+        )
         assets = s3deploy.BucketDeployment(
             self,
             "SpaAssets",
             sources=[s3deploy.Source.asset(web_dist, exclude=["index.html", "config.json"])],
+            log_group=deploy_logs,
             destination_bucket=self.bucket,
             prune=False,
             cache_control=[
@@ -245,6 +250,7 @@ class ProofDevStack(Stack):
                     },
                 ),
             ],
+            log_group=deploy_logs,
             destination_bucket=self.bucket,
             prune=False,
             cache_control=[s3deploy.CacheControl.no_cache()],

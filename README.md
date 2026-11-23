@@ -181,4 +181,9 @@ Open `SiteUrl`, sign in, and set a new password. The page shows the email. The f
 cd infra && cdk destroy ProofDev
 ```
 
-This removes the bucket, the pool and its users, the logs, and the API. The `CDKToolkit` bootstrap stack stays.
+This removes the bucket, the pool and its users, the API, and the stack's log groups. Some things remain:
+
+- The `CDKToolkit` bootstrap stack, with the image and file assets it holds.
+- One small log group, `/aws/lambda/ProofDev-CustomS3AutoDeleteObjects…`. CDK's bucket-emptying handler creates it at runtime, and the stack does not own it.
+
+`cdk destroy` synthesizes the app first, so `web/dist` must exist. Run `npm run build` in `web/` first.

@@ -244,3 +244,12 @@ def test_each_deployment_uploads_the_right_files(built):
     by_cache = {d["Properties"]["SystemMetadata"]["cache-control"]: files(d) for d in _deployments(t)}
     assert by_cache["no-cache"] == {"index.html", "config.json"}
     assert by_cache["public, max-age=31536000, immutable"] == {"assets/app-abc123.js"}
+
+
+def test_every_log_group_keeps_a_month_and_is_destroyed_with_the_stack(built):
+    _, t, _ = built
+    groups = t.find_resources("AWS::Logs::LogGroup")
+    assert groups
+    for name, group in groups.items():
+        assert group.get("DeletionPolicy") == "Delete", name
+        assert group["Properties"].get("RetentionInDays") == 30, name

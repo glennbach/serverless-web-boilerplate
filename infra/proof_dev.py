@@ -314,6 +314,9 @@ class ProofDevStack(Stack):
 def dev_stack(app: App, *, api_dir: str, web_dist: str) -> ProofDevStack:
     """Add the dev Environment to ``app``, named from its ``projectName`` context value.
 
+    Side Effects:
+        Adds the stack to ``app``'s construct tree.
+
     Args:
         app: The CDK app. ``cdk.json`` or ``cdk -c projectName=...`` supplies ``projectName``.
 

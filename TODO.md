@@ -8,7 +8,7 @@
 - [ ] **T006** Verify the adapter replaces a forged x-amzn-request-context header #ops #infra #security
   - Acceptance: On dev, GET /api/me with a valid token and a forged x-amzn-request-context header naming another email returns the token's email. Result recorded here, with the adapter version tested.
   - Context: ADR 0002 follow-up 1. Source inspection (v0.9.1, v1.1.0) shows HeaderMap::insert replaces the client copy; this proves it for the pinned version. Repeat whenever the adapter version changes. Source: docs/adr/0002-proof-application.md.
-  - Blocked by: T005
+  - Blocked by: T009
 
 ## P2 — Backlog
 

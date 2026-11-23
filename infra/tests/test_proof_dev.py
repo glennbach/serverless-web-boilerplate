@@ -284,7 +284,7 @@ def test_valid_project_names(name):
     [
         (None, "projectName"), ("", "projectName"), ("MyApp", "lowercase"), ("my_app", "lowercase"),
         ("1app", "lowercase"), ("app-", "lowercase"), ("a" * 59, "58"),
-        ("laws-firm", "aws"), ("amazonia", "amazon"), ("cognito-x", "cognito"),
+        ("laws-firm", "contains 'aws'"), ("amazonia", "contains 'amazon'"), ("cognito-x", "contains 'cognito'"),
     ],
 )
 def test_invalid_project_names_fail_at_synth(tmp_path, dist, name, rule):

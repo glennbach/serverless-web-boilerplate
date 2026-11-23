@@ -6,7 +6,7 @@ See docs/plans/2026-11-22-dev-environment.md and ADR 0001 / ADR 0002.
 import json
 
 import jsii
-from aws_cdk import Duration, RemovalPolicy, Stack
+from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack
 from aws_cdk import aws_apigateway as apigw
 from aws_cdk import aws_apigatewayv2 as apigwv2
 from aws_cdk import aws_apigatewayv2_authorizers as authorizers
@@ -18,6 +18,7 @@ from aws_cdk import aws_ecr_assets as ecr_assets
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_logs as logs
 from aws_cdk import aws_s3 as s3
+from aws_cdk import aws_s3_deployment as s3deploy
 from constructs import Construct
 
 #: Every resource of this stack is created here (ADR 0001, Decision 10).
@@ -212,3 +213,48 @@ class ProofDevStack(Stack):
             auto_deploy=True,
             access_log_settings=_AccessLogSettings(apigwv2.LogGroupLogDestination(self.access_logs)),
         )
+
+        # Two deployments to one bucket, both prune=False so neither deletes the
+        # other's files. The local web/dist/config.json (authMode dev) is in neither.
+        assets = s3deploy.BucketDeployment(
+            self,
+            "SpaAssets",
+            sources=[s3deploy.Source.asset(web_dist, exclude=["index.html", "config.json"])],
+            destination_bucket=self.bucket,
+            prune=False,
+            cache_control=[
+                s3deploy.CacheControl.set_public(),
+                s3deploy.CacheControl.max_age(Duration.days(365)),
+                s3deploy.CacheControl.immutable(),
+            ],
+        )
+        entry = s3deploy.BucketDeployment(
+            self,
+            "SpaEntry",
+            sources=[
+                s3deploy.Source.asset(web_dist, exclude=["*", "!index.html"]),
+                s3deploy.Source.json_data(
+                    "config.json",
+                    {
+                        "authMode": "cognito",
+                        "apiBaseUrl": self.api.api_endpoint,
+                        "cognitoDomainUrl": self.user_pool_domain.base_url(),
+                        "clientId": self.user_pool_client.user_pool_client_id,
+                    },
+                ),
+            ],
+            destination_bucket=self.bucket,
+            prune=False,
+            cache_control=[s3deploy.CacheControl.no_cache()],
+        )
+        # A new index.html never points at hashed assets that are not uploaded yet.
+        entry.node.add_dependency(assets)
+
+        CfnOutput(self, "SiteUrl", value=self.site_url)
+        CfnOutput(self, "ApiUrl", value=self.api.api_endpoint)
+        CfnOutput(self, "UserPoolId", value=self.user_pool.user_pool_id)
+        CfnOutput(self, "UserPoolClientId", value=self.user_pool_client.user_pool_client_id)
+        CfnOutput(self, "CognitoDomainUrl", value=self.user_pool_domain.base_url())
+        CfnOutput(self, "ApiAccessLogGroup", value=self.access_logs.log_group_name)
+        CfnOutput(self, "ApiFunctionLogGroup", value=self.function.log_group.log_group_name)
+        CfnOutput(self, "ApiFunctionName", value=self.function.function_name)

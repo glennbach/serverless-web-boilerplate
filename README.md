@@ -18,7 +18,7 @@ The proof: a one-page React SPA that calls a Go API and shows the signed-in user
 | Phase | Scope | Tasks | Status |
 |---|---|---|---|
 | 1 | The proof application, built and tested on a laptop | T001, T002 | Implemented ([plan](docs/plans/2026-11-22-proof-application.md)) |
-| 2a | One dev environment on AWS, deployed by hand with `cdk deploy` | T003–T006 | Not started |
+| 2a | One dev environment on AWS, deployed by hand with `cdk deploy` | T003–T006 | `infra/` written and tested, not yet deployed ([plan](docs/plans/2026-11-22-dev-environment.md)) |
 | 2b | Pipeline, QA, prod, WAF, and DNS | T007, T008 | Not started |
 
 ---
@@ -113,3 +113,72 @@ The image contains the Go binary and Lambda Web Adapter 1.1.0 at `/opt/extension
 ### Not proven until phase 2a
 
 The real Hosted UI and token endpoint, the API Gateway JWT authorizer and CORS, the adapter on Lambda, and the check that the adapter replaces a forged `x-amzn-request-context` header (T006).
+
+---
+
+## Phase 2a: the dev environment
+
+`infra/` is one CDK stack, `ProofDev`, in `us-west-2`. Nothing is created in `us-east-1`. The stack contains:
+
+- an S3 bucket and a CloudFront distribution for the SPA, on its `*.cloudfront.net` URL
+- a Cognito User Pool, with its Hosted UI prefix domain and the SPA's PKCE client
+- the `api/` image on Lambda, with `AUTH_MODE=aws` and X-Ray tracing
+- an HTTP API with a JWT authorizer, CORS, and access logs
+- the deployed `config.json`
+
+See the [plan](docs/plans/2026-11-22-dev-environment.md).
+
+### Prerequisites
+
+- AWS credentials for the target account.
+- Docker running, because `cdk deploy` builds the arm64 API image.
+- `uv`.
+- AWS CDK CLI 2.1149.0 or later. Older CLIs cannot read the assembly that the pinned `aws-cdk-lib` writes. Use `npx aws-cdk@2.1149.0 ...` if the installed `cdk` is older.
+
+### Test
+
+```bash
+cd infra && uv run pytest -q
+```
+
+`infra/tests/test_proof_dev.py` checks the synthesized template:
+
+- Nothing in it refers to `us-east-1`, and the bucket is private behind CloudFront Origin Access Control.
+- The Cognito schema, the client's exact callback and logout URLs, and the classic Hosted UI on the prefix domain.
+- The arm64 image, `AUTH_MODE=aws`, and active tracing.
+- CORS for exactly the site origin, `GET /api/me` as the only route, behind the JWT authorizer.
+- The JSON access-log format.
+- The two SPA uploads and their cache headers, and that the local `config.json` is never uploaded.
+- The stack outputs.
+
+### Deploy
+
+```bash
+aws sts get-caller-identity                     # the intended account
+cd web && npm ci && npm test && npm run build    # one bundle for every environment
+cd ../infra && uv run pytest -q
+cdk bootstrap aws://$(aws sts get-caller-identity --query Account --output text)/us-west-2   # once per account
+cdk deploy ProofDev
+```
+
+The deploy prints `SiteUrl`, `ApiUrl`, `UserPoolId`, `UserPoolClientId`, `CognitoDomainUrl`, `ApiAccessLogGroup`, `ApiFunctionLogGroup`, and `ApiFunctionName`.
+
+Hosted UI prefixes are unique per region across all AWS accounts. If `swb-proof-dev` is taken, change `cognitoDomainPrefix` in `infra/cdk.json`.
+
+Self sign-up is off. Create a user, and Cognito emails a temporary password:
+
+```bash
+aws cognito-idp admin-create-user --region us-west-2 --user-pool-id "$POOL" \
+  --username "$EMAIL" --user-attributes Name=email,Value="$EMAIL" Name=email_verified,Value=true \
+  --desired-delivery-mediums EMAIL
+```
+
+Open `SiteUrl`, sign in, and set a new password. The page shows the email. The full end-to-end check is Task 5 of the plan (T005).
+
+### Tear down
+
+```bash
+cd infra && cdk destroy ProofDev
+```
+
+This removes the bucket, the pool and its users, the logs, and the API. The `CDKToolkit` bootstrap stack stays.

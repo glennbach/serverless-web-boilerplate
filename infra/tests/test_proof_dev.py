@@ -173,3 +173,51 @@ def test_default_stage_writes_json_access_logs(built):
         "status", "responseLength", "responseLatency", "integrationStatus", "integrationError", "authorizerError",
     }
     t.has_resource_properties("AWS::Logs::LogGroup", {"RetentionInDays": 30})
+
+
+def _deployments(t):
+    return t.find_resources("Custom::CDKBucketDeployment").values()
+
+
+def test_entry_files_are_no_cache(built):
+    _, t, _ = built
+    caches = sorted(d["Properties"]["SystemMetadata"]["cache-control"] for d in _deployments(t))
+    assert caches == ["no-cache", "public, max-age=31536000, immutable"]
+    assert all(d["Properties"]["Prune"] is False for d in _deployments(t))
+
+
+def test_config_json_is_built_from_stack_values(built):
+    stack, t, outdir = built
+    (markers,) = [m for d in _deployments(t) for m in d["Properties"].get("SourceMarkers", []) if m]
+    (staged,) = outdir.glob("asset.*/config.json")
+    config = json.loads(staged.read_text())
+
+    def fill(value):
+        """Replace each deploy-time marker with the CloudFormation value it stands for."""
+        for marker, cfn in markers.items():
+            value = value.replace(marker, json.dumps(cfn))
+        return value
+
+    filled = {k: fill(v) for k, v in config.items()}
+    domain_ref = json.dumps(stack.resolve(stack.user_pool_domain.domain_name))
+    assert filled == {
+        "authMode": "cognito",
+        "apiBaseUrl": json.dumps(stack.resolve(stack.api.api_endpoint)),
+        "cognitoDomainUrl": f"https://{domain_ref}.auth.us-west-2.amazoncognito.com",
+        "clientId": json.dumps(stack.resolve(stack.user_pool_client.user_pool_client_id)),
+    }
+
+
+def test_dev_config_is_never_uploaded(built):
+    _, _, outdir = built
+    staged = [p.read_text() for p in outdir.glob("asset.*/config.json")]
+    assert len(staged) == 1 and '"cognito"' in staged[0] and '"dev"' not in staged[0]
+
+
+def test_outputs(built):
+    _, t, _ = built
+    for name in (
+        "SiteUrl", "ApiUrl", "UserPoolId", "UserPoolClientId", "CognitoDomainUrl",
+        "ApiAccessLogGroup", "ApiFunctionLogGroup", "ApiFunctionName",
+    ):
+        t.has_output(name, {})

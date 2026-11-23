@@ -9,7 +9,7 @@
   - Acceptance: In a browser, sign-in through the Hosted UI on the dev CloudFront URL shows the user's email. The CORS preflight succeeds. A request without a token is rejected by API Gateway before Lambda. Lambda traces appear in X-Ray and API access logs in CloudWatch.
   - Context: Follows the T004 plan: docs/plans/2026-11-22-dev-environment.md (Tasks 1-4 build infra/, Task 5 is the deploy and end-to-end proof).
   - Blocked by: T004
-  - Claimed: claude | 2026-11-22 | t005-dev-environment
+  - Review: 2026-11-22
 
 - [ ] **T006** Verify the adapter replaces a forged x-amzn-request-context header #ops #infra #security
   - Acceptance: On dev, GET /api/me with a valid token and a forged x-amzn-request-context header naming another email returns the token's email. Result recorded here, with the adapter version tested.

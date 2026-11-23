@@ -18,7 +18,7 @@ The proof: a one-page React SPA that calls a Go API and shows the signed-in user
 | Phase | Scope | Tasks | Status |
 |---|---|---|---|
 | 1 | The proof application, built and tested on a laptop | T001, T002 | Implemented ([plan](docs/plans/2026-11-22-proof-application.md)) |
-| 2a | One dev environment on AWS, deployed by hand with `cdk deploy` | T003–T006 | `infra/` written and tested, not yet deployed ([plan](docs/plans/2026-11-22-dev-environment.md)) |
+| 2a | One dev environment on AWS, deployed by hand with `cdk deploy` | T003–T006 | Deployed and proven end to end (T005) ([plan](docs/plans/2026-11-22-dev-environment.md)) |
 | 2b | Pipeline, QA, prod, WAF, and DNS | T007, T008 | Not started |
 
 ---

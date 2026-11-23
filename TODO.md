@@ -22,13 +22,14 @@
   - Context: Follows the T007 plan. The plan may split this into smaller tasks.
   - Blocked by: T007,T009
 
-- [ ] **T009** Derive the stack name and Cognito prefix from one projectName setting #feature #infra
+## Done (recent)
+
+- [x] **T009** Derive the stack name and Cognito prefix from one projectName setting #feature #infra
   - Acceptance: infra/cdk.json has one projectName context value, and both the CDK stack name and the Hosted UI domain prefix come from it as <projectName>-<environment>; infra/app.py, infra/proof_dev.py and infra/cdk.json write out no deployed name (ProofDevStack and proof_dev.py keep their names until T007/T008). Tests synthesize with a different projectName and assert that the stack name and the UserPoolDomain change with it, and that invalid names fail at synth. The README has a 'Start a new project from this repo' section: copy it (fresh history; GitHub template once published, not a fork), set projectName, cdk bootstrap if the account or region is new, deploy, create a user. swb-proof-dev is deployed and sign-in works on it.
   - Context: Goal: a copy of this repo deploys as its own Project by changing one value. Plan: docs/plans/2026-11-23-project-name.md. ADR: docs/adr/0003-deployed-names-from-project-name.md. Decided 2026-11-23: projectName swb-proof gives stack and prefix swb-proof-dev; ProofDev was destroyed first, because the new stack cannot claim the prefix while ProofDev holds it. T006 runs against swb-proof-dev afterwards. T007's QA and prod names follow the same rule.
   - Related: T007
-  - Claimed: claude | 2026-11-23 | master
-
-## Done (recent)
+  - Outcome: completed
+  - Closed: 2026-11-23
 
 - [x] **T005** Deploy the dev environment and prove sign-in end to end #feature #infra
   - Acceptance: In a browser, sign-in through the Hosted UI on the dev CloudFront URL shows the user's email. The CORS preflight succeeds. A request without a token is rejected by API Gateway before Lambda. Lambda traces appear in X-Ray and API access logs in CloudWatch.

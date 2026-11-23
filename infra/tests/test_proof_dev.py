@@ -64,3 +64,40 @@ def test_site_bucket_is_private_behind_oac(built):
             )
         },
     )
+
+
+def test_pool_schema(built):
+    _, t, _ = built
+    t.has_resource_properties(
+        "AWS::Cognito::UserPool",
+        {
+            "UsernameAttributes": ["email"],
+            "AutoVerifiedAttributes": ["email"],
+            "Schema": Match.array_with([Match.object_like({"Name": "email", "Required": True, "Mutable": True})]),
+            "AdminCreateUserConfig": {"AllowAdminCreateUserOnly": True},
+            "UserPoolTier": "LITE",
+        },
+    )
+
+
+def test_prefix_domain_classic_hosted_ui(built):
+    _, t, _ = built
+    t.has_resource_properties("AWS::Cognito::UserPoolDomain", {"Domain": "test-prefix", "ManagedLoginVersion": 1})
+
+
+def test_client_is_public_pkce_with_site_callback(built):
+    stack, t, _ = built
+    site = stack.resolve(stack.site_url + "/")
+    t.has_resource_properties(
+        "AWS::Cognito::UserPoolClient",
+        {
+            "GenerateSecret": False,
+            "AllowedOAuthFlowsUserPoolClient": True,
+            "AllowedOAuthFlows": ["code"],
+            "AllowedOAuthScopes": Match.array_equals(["openid", "email"]),
+            "SupportedIdentityProviders": ["COGNITO"],
+            "CallbackURLs": [site],
+            "LogoutURLs": [site],
+            "ReadAttributes": Match.absent(),
+        },
+    )

@@ -6,6 +6,7 @@ See docs/plans/2026-11-22-dev-environment.md and ADR 0001 / ADR 0002.
 from aws_cdk import RemovalPolicy, Stack
 from aws_cdk import aws_cloudfront as cloudfront
 from aws_cdk import aws_cloudfront_origins as origins
+from aws_cdk import aws_cognito as cognito
 from aws_cdk import aws_s3 as s3
 from constructs import Construct
 
@@ -66,3 +67,39 @@ class ProofDevStack(Stack):
         )
         #: The site origin, ``https://<distribution>.cloudfront.net``, with no trailing slash.
         self.site_url = f"https://{self.distribution.distribution_domain_name}"
+
+        # Sign-in alias and the email attribute's required/mutable flags are
+        # fixed at pool creation; changing them means a new pool.
+        #: The dev User Pool. Email is the username and is on the ID token.
+        self.user_pool = cognito.UserPool(
+            self,
+            "Users",
+            sign_in_aliases=cognito.SignInAliases(email=True),
+            standard_attributes=cognito.StandardAttributes(
+                email=cognito.StandardAttribute(required=True, mutable=True)
+            ),
+            auto_verify=cognito.AutoVerifiedAttrs(email=True),
+            self_sign_up_enabled=False,
+            account_recovery=cognito.AccountRecovery.EMAIL_ONLY,
+            mfa=cognito.Mfa.OFF,
+            feature_plan=cognito.FeaturePlan.LITE,
+            removal_policy=RemovalPolicy.DESTROY,
+        )
+        #: The Hosted UI prefix domain, ``https://<prefix>.auth.us-west-2.amazoncognito.com``.
+        self.user_pool_domain = self.user_pool.add_domain(
+            "Domain",
+            cognito_domain=cognito.CognitoDomainOptions(domain_prefix=cognito_domain_prefix),
+            managed_login_version=cognito.ManagedLoginVersion.CLASSIC_HOSTED_UI,
+        )
+        #: The SPA's public client: authorization-code grant, PKCE in the browser, no secret.
+        self.user_pool_client = self.user_pool.add_client(
+            "Spa",
+            generate_secret=False,
+            o_auth=cognito.OAuthSettings(
+                flows=cognito.OAuthFlows(authorization_code_grant=True),
+                scopes=[cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL],
+                callback_urls=[self.site_url + "/"],
+                logout_urls=[self.site_url + "/"],
+            ),
+            supported_identity_providers=[cognito.UserPoolClientIdentityProvider.COGNITO],
+        )

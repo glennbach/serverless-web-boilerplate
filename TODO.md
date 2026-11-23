@@ -1,15 +1,9 @@
 # TODO — serverless-web-boilerplate
-<!-- todo-format: 2; next-id: 9 -->
+<!-- todo-format: 2; next-id: 10 -->
 
 ## P0 — Critical / Blocking
 
 ## P1 — High Priority
-
-- [ ] **T005** Deploy the dev environment and prove sign-in end to end #feature #infra
-  - Acceptance: In a browser, sign-in through the Hosted UI on the dev CloudFront URL shows the user's email. The CORS preflight succeeds. A request without a token is rejected by API Gateway before Lambda. Lambda traces appear in X-Ray and API access logs in CloudWatch.
-  - Context: Follows the T004 plan: docs/plans/2026-11-22-dev-environment.md (Tasks 1-4 build infra/, Task 5 is the deploy and end-to-end proof).
-  - Blocked by: T004
-  - Review: 2026-11-22
 
 - [ ] **T006** Verify the adapter replaces a forged x-amzn-request-context header #ops #infra #security
   - Acceptance: On dev, GET /api/me with a valid token and a forged x-amzn-request-context header naming another email returns the token's email. Result recorded here, with the adapter version tested.
@@ -26,9 +20,22 @@
 - [ ] **T008** Build the full platform #feature #infra
   - Acceptance: A push to main deploys dev and then QA through CodePipeline. Prod deploys after manual approval. Each environment is served on its custom domain behind WAF, and sign-in works in each.
   - Context: Follows the T007 plan. The plan may split this into smaller tasks.
-  - Blocked by: T007
+  - Blocked by: T007,T009
+
+- [ ] **T009** Derive the stack name and Cognito prefix from one projectName setting #feature #infra
+  - Acceptance: infra/cdk.json has one projectName context value, and both the CDK stack name and the Hosted UI domain prefix come from it as <projectName>-<environment>; infra/app.py, infra/proof_dev.py and infra/cdk.json write out no deployed name (ProofDevStack and proof_dev.py keep their names until T007/T008). Tests synthesize with a different projectName and assert that the stack name and the UserPoolDomain change with it, and that invalid names fail at synth. The README has a 'Start a new project from this repo' section: copy it (fresh history; GitHub template once published, not a fork), set projectName, cdk bootstrap if the account or region is new, deploy, create a user. swb-proof-dev is deployed and sign-in works on it.
+  - Context: Goal: a copy of this repo deploys as its own Project by changing one value. Plan: docs/plans/2026-11-23-project-name.md. ADR: docs/adr/0003-deployed-names-from-project-name.md. Decided 2026-11-23: projectName swb-proof gives stack and prefix swb-proof-dev; ProofDev was destroyed first, because the new stack cannot claim the prefix while ProofDev holds it. T006 runs against swb-proof-dev afterwards. T007's QA and prod names follow the same rule.
+  - Related: T007
+  - Claimed: claude | 2026-11-23 | master
 
 ## Done (recent)
+
+- [x] **T005** Deploy the dev environment and prove sign-in end to end #feature #infra
+  - Acceptance: In a browser, sign-in through the Hosted UI on the dev CloudFront URL shows the user's email. The CORS preflight succeeds. A request without a token is rejected by API Gateway before Lambda. Lambda traces appear in X-Ray and API access logs in CloudWatch.
+  - Context: Follows the T004 plan: docs/plans/2026-11-22-dev-environment.md (Tasks 1-4 build infra/, Task 5 is the deploy and end-to-end proof).
+  - Blocked by: T004
+  - Outcome: completed
+  - Closed: 2026-11-23
 
 - [x] **T004** Plan a single dev environment deployed with cdk deploy #docs #infra
   - Acceptance: Plan written under docs/plans/ and linked here. Python CDK in infra/ deploys by hand, one environment, entirely in us-west-2 with nothing created in us-east-1: Cognito User Pool with email on the ID token, Hosted UI app client with PKCE, HTTP API with JWT authorizer and CORS (SPA origin, GET, Authorization), Lambda from the ECR image with AUTH_MODE=aws and X-Ray active tracing, API access logs, S3 plus CloudFront for the SPA, and the deployed config.json with a short cache lifetime. No pipeline, WAF, Route 53, QA, or prod. The user has vetted it.

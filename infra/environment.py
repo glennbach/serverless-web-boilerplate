@@ -21,7 +21,6 @@ from aws_cdk import aws_logs as logs
 from aws_cdk import aws_s3 as s3
 from aws_cdk import aws_s3_deployment as s3deploy
 from constructs import Construct
-
 from edge import EDGE_REGION, EdgeStack
 
 #: Every resource of this stack is created here (ADR 0001, Decision 10).
@@ -68,10 +67,14 @@ def checked_project_name(project_name: object) -> str:
             "start with a letter, and not end with a hyphen"
         )
     if len(project_name) > MAX_PROJECT_NAME:
-        raise ValueError(f"projectName {project_name!r} is longer than {MAX_PROJECT_NAME} characters")
+        raise ValueError(
+            f"projectName {project_name!r} is longer than {MAX_PROJECT_NAME} characters"
+        )
     for word in RESERVED_WORDS:
         if word in project_name:
-            raise ValueError(f"projectName {project_name!r} contains {word!r}, which Cognito refuses in a prefix")
+            raise ValueError(
+                f"projectName {project_name!r} contains {word!r}, which Cognito refuses in a prefix"
+            )
     return project_name
 
 
@@ -89,7 +92,9 @@ def environment_name(project_name: object, environment: str) -> str:
         ``<project_name>-<environment>``.
     """
     if environment not in ENVIRONMENTS:
-        raise ValueError(f"environment {environment!r} is not one of {', '.join(ENVIRONMENTS)}")
+        raise ValueError(
+            f"environment {environment!r} is not one of {', '.join(ENVIRONMENTS)}"
+        )
     return f"{checked_project_name(project_name)}-{environment}"
 
 
@@ -205,6 +210,7 @@ class EnvironmentStack(Stack):
             default_root_object="index.html",
             price_class=cloudfront.PriceClass.PRICE_CLASS_100,
             web_acl_id=web_acl_arn,
+            comment=f"{self.stack_name} SPA",
         )
         #: The site origin, ``https://<distribution>.cloudfront.net``, with no trailing slash.
         self.site_url = f"https://{self.distribution.distribution_domain_name}"
@@ -231,7 +237,9 @@ class EnvironmentStack(Stack):
         #: The Hosted UI prefix domain, ``https://<prefix>.auth.us-west-2.amazoncognito.com``.
         self.user_pool_domain = self.user_pool.add_domain(
             "Domain",
-            cognito_domain=cognito.CognitoDomainOptions(domain_prefix=cognito_domain_prefix),
+            cognito_domain=cognito.CognitoDomainOptions(
+                domain_prefix=cognito_domain_prefix
+            ),
             managed_login_version=cognito.ManagedLoginVersion.CLASSIC_HOSTED_UI,
         )
         #: The SPA's public client: authorization-code grant, PKCE in the browser, no secret.
@@ -245,14 +253,18 @@ class EnvironmentStack(Stack):
                 callback_urls=[self.site_url + "/"],
                 logout_urls=[self.site_url + "/"],
             ),
-            supported_identity_providers=[cognito.UserPoolClientIdentityProvider.COGNITO],
+            supported_identity_providers=[
+                cognito.UserPoolClientIdentityProvider.COGNITO
+            ],
         )
 
         #: The Go API image on Lambda, reading the user from the authorizer's claims.
         self.function = lambda_.DockerImageFunction(
             self,
             "Api",
-            code=lambda_.DockerImageCode.from_image_asset(api_dir, platform=ecr_assets.Platform.LINUX_ARM64),
+            code=lambda_.DockerImageCode.from_image_asset(
+                api_dir, platform=ecr_assets.Platform.LINUX_ARM64
+            ),
             architecture=lambda_.Architecture.ARM_64,
             memory_size=256,
             timeout=Duration.seconds(10),
@@ -292,7 +304,9 @@ class EnvironmentStack(Stack):
             "DefaultStage",
             http_api=self.api,
             auto_deploy=True,
-            access_log_settings=_AccessLogSettings(apigwv2.LogGroupLogDestination(self.access_logs)),
+            access_log_settings=_AccessLogSettings(
+                apigwv2.LogGroupLogDestination(self.access_logs)
+            ),
         )
 
         # Two deployments to one bucket, both prune=False so neither deletes the
@@ -304,7 +318,9 @@ class EnvironmentStack(Stack):
         assets = s3deploy.BucketDeployment(
             self,
             "SpaAssets",
-            sources=[s3deploy.Source.asset(web_dist, exclude=["index.html", "config.json"])],
+            sources=[
+                s3deploy.Source.asset(web_dist, exclude=["index.html", "config.json"])
+            ],
             log_group=deploy_logs,
             destination_bucket=self.bucket,
             prune=False,
@@ -342,10 +358,14 @@ class EnvironmentStack(Stack):
         #: The ``ApiUrl`` output, read by the pipeline's smoke test.
         self.api_url_output = CfnOutput(self, "ApiUrl", value=self.api.api_endpoint)
         CfnOutput(self, "UserPoolId", value=self.user_pool.user_pool_id)
-        CfnOutput(self, "UserPoolClientId", value=self.user_pool_client.user_pool_client_id)
+        CfnOutput(
+            self, "UserPoolClientId", value=self.user_pool_client.user_pool_client_id
+        )
         CfnOutput(self, "CognitoDomainUrl", value=self.user_pool_domain.base_url())
         CfnOutput(self, "ApiAccessLogGroup", value=self.access_logs.log_group_name)
-        CfnOutput(self, "ApiFunctionLogGroup", value=self.function.log_group.log_group_name)
+        CfnOutput(
+            self, "ApiFunctionLogGroup", value=self.function.log_group.log_group_name
+        )
         CfnOutput(self, "ApiFunctionName", value=self.function.function_name)
 
 

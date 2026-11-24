@@ -2,25 +2,36 @@ import json
 from pathlib import Path
 
 import pytest
+from aws_cdk import Stage
 from aws_cdk.assertions import Capture, Match, Template
 
 from conftest import INFRA, _app
-from environment import environment_name, environment_stack
+from edge import MANAGED_RULE_GROUPS
+from environment import ENVIRONMENTS, EnvironmentStage, environment_name
+
+
+def _stage(tmp_path, dist, environment="dev", **context):
+    """One Environment's stage, named from the ``cdk.json`` context updated by ``context``."""
+    app = _app(tmp_path, **context)
+    return EnvironmentStage(
+        app, environment.capitalize(), project_name=app.node.try_get_context("projectName"),
+        environment=environment, account="111111111111", api_dir=str(INFRA.parent / "api"), web_dist=str(dist),
+    )
 
 
 @pytest.fixture
 def built(tmp_path, dist):
-    """The dev stack, its template, and the cloud assembly directory."""
-    app = _app(tmp_path)
-    stack = environment_stack(app, "dev", api_dir=str(INFRA.parent / "api"), web_dist=str(dist))
+    """The dev stack, its template, and the app's cloud assembly directory."""
+    stage = _stage(tmp_path, dist)
+    stack = stage.environment_stack
     template = Template.from_stack(stack)
-    return stack, template, Path(app.synth().directory)
+    return stack, template, Path(stage.node.root.synth().directory)
 
 
-def test_nothing_outside_home_region(built):
-    stack, template, _ = built
-    assert stack.region == "us-west-2"
-    assert "us-east-1" not in json.dumps(template.to_json())
+@pytest.fixture(params=ENVIRONMENTS)
+def stage(request, tmp_path, dist):
+    """Each Environment's stage."""
+    return _stage(tmp_path, dist, request.param)
 
 
 def test_site_bucket_is_private_behind_oac(built):
@@ -101,8 +112,9 @@ def test_function_runs_image_in_aws_mode_with_tracing(built):
 
 
 def test_function_image_is_arm64(built):
-    stack, _, outdir = built
-    images = json.loads((outdir / f"{stack.artifact_id}.assets.json").read_text())["dockerImages"]
+    stack, _, _ = built
+    assembly = Path(Stage.of(stack).synth().directory)  # the stage's nested assembly holds the manifest
+    images = json.loads((assembly / f"{stack.artifact_id}.assets.json").read_text())["dockerImages"]
     assert [i["source"]["platform"] for i in images.values()] == ["linux/arm64"]
 
 
@@ -234,7 +246,7 @@ def test_each_deployment_uploads_the_right_files(built):
     ("dev", 30, "Delete", "INACTIVE"), ("qa", 30, "Delete", "INACTIVE"), ("prod", 180, "Retain", "ACTIVE"),
 ])
 def test_retention_and_removal_by_environment(tmp_path, dist, env, days, policy, protection):
-    t = Template.from_stack(environment_stack(_app(tmp_path), env, api_dir=str(INFRA.parent / "api"), web_dist=str(dist)))
+    t = Template.from_stack(_stage(tmp_path, dist, env).environment_stack)
     groups = t.find_resources("AWS::Logs::LogGroup")
     assert groups
     for name, group in groups.items():
@@ -270,7 +282,7 @@ def test_checked_in_project_name_names_the_dev_stack(built):
 
 
 def test_another_project_name_renames_stack_and_prefix(tmp_path, dist):
-    stack = environment_stack(_app(tmp_path, projectName="acme-shop"), "dev", api_dir=str(INFRA.parent / "api"), web_dist=str(dist))
+    stack = _stage(tmp_path, dist, projectName="acme-shop").environment_stack
     assert stack.stack_name == "acme-shop-dev"
     Template.from_stack(stack).has_resource_properties("AWS::Cognito::UserPoolDomain", {"Domain": "acme-shop-dev"})
 
@@ -289,11 +301,57 @@ def test_valid_project_names(name):
     ],
 )
 def test_invalid_project_names_fail_at_synth(tmp_path, dist, name, rule):
-    # Through environment_stack, as app.py runs it; None means projectName is absent from the context.
+    # Through the stage, with projectName from the context; None means projectName is absent.
     with pytest.raises(ValueError, match=rule):
-        environment_stack(_app(tmp_path, projectName=name), "dev", api_dir=str(INFRA.parent / "api"), web_dist=str(dist))
+        _stage(tmp_path, dist, projectName=name)
 
 
 def test_unknown_environment_fails():
     with pytest.raises(ValueError, match="staging"):
         environment_name("swb-proof", "staging")
+
+
+def test_web_acl_fits_the_free_plan(stage):
+    t = Template.from_stack(stage.edge_stack)
+    assert stage.edge_stack.region == "us-east-1"
+    t.resource_count_is("AWS::WAFv2::WebACL", 1)
+    t.resource_count_is("AWS::WAFv2::RuleGroup", 0)
+    rules = Capture()
+    t.has_resource_properties(
+        "AWS::WAFv2::WebACL", {"Scope": "CLOUDFRONT", "DefaultAction": {"Allow": {}}, "Rules": rules}
+    )
+    by_name = {r["Name"]: r for r in rules.as_array()}
+    assert len(by_name) <= 5
+    assert list(by_name) == ["RateLimit", *MANAGED_RULE_GROUPS]
+    assert by_name["RateLimit"]["Statement"] == {"RateBasedStatement": {"Limit": 1000, "AggregateKeyType": "IP"}}
+    assert by_name["RateLimit"]["Action"] == {"Block": {}}
+    for name in MANAGED_RULE_GROUPS:
+        assert by_name[name]["Statement"] == {"ManagedRuleGroupStatement": {"VendorName": "AWS", "Name": name}}
+        assert by_name[name]["OverrideAction"] == {"None": {}}
+
+
+def test_edge_holds_nothing_but_the_web_acl(stage):
+    types = {r["Type"] for r in Template.from_stack(stage.edge_stack).to_json()["Resources"].values()}
+    assert "AWS::WAFv2::WebACL" in types
+    assert not any(t.startswith(("AWS::CloudFront", "AWS::S3", "AWS::Cognito", "AWS::ApiGateway")) for t in types)
+
+
+def test_distribution_is_flat_rate_eligible(stage):
+    t = Template.from_stack(stage.environment_stack)
+    assert stage.environment_stack.region == "us-west-2"
+    # No blanket "us-east-1" string check: the cross-region reader for WebACLId names us-east-1.
+    config = Capture()
+    t.has_resource_properties("AWS::CloudFront::Distribution", {"DistributionConfig": config})
+    c = config.as_object()
+    assert c["WebACLId"]
+    for behavior in [c["DefaultCacheBehavior"], *c.get("CacheBehaviors", [])]:
+        assert "CachePolicyId" in behavior
+        for banned in ("ForwardedValues", "FunctionAssociations", "RealtimeLogConfigArn"):
+            assert banned not in behavior
+    t.resource_count_is("AWS::CloudFront::CloudFrontOriginAccessIdentity", 0)
+    t.resource_count_is("AWS::CloudFront::Function", 0)
+
+
+def test_stack_names(stage):
+    name = f"swb-proof-{stage.environment}"
+    assert (stage.environment_stack.stack_name, stage.edge_stack.stack_name) == (name, f"{name}-edge")

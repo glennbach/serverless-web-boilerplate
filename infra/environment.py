@@ -4,11 +4,10 @@ See docs/plans/2026-11-23-platform.md, docs/plans/2026-11-22-dev-environment.md,
 """
 
 import json
-import os
 import re
 
 import jsii
-from aws_cdk import App, CfnOutput, Duration, Environment, RemovalPolicy, Stack
+from aws_cdk import CfnOutput, Duration, Environment, RemovalPolicy, Stack, Stage
 from aws_cdk import aws_apigateway as apigw
 from aws_cdk import aws_apigatewayv2 as apigwv2
 from aws_cdk import aws_apigatewayv2_authorizers as authorizers
@@ -22,6 +21,8 @@ from aws_cdk import aws_logs as logs
 from aws_cdk import aws_s3 as s3
 from aws_cdk import aws_s3_deployment as s3deploy
 from constructs import Construct
+
+from edge import EDGE_REGION, EdgeStack
 
 #: Every resource of this stack is created here (ADR 0001, Decision 10).
 HOME_REGION = "us-west-2"
@@ -348,34 +349,60 @@ class EnvironmentStack(Stack):
         CfnOutput(self, "ApiFunctionName", value=self.function.function_name)
 
 
-# After EnvironmentStack: Python 3.12 and 3.13 evaluate the return annotation when the function is defined.
-def environment_stack(app: App, environment: str, *, api_dir: str, web_dist: str) -> EnvironmentStack:
-    """Add one Environment to ``app``, named from its ``projectName`` context value.
+class EnvironmentStage(Stage):
+    """One Environment: its web ACL in ``us-east-1`` and everything else in the home region.
 
-    Side Effects:
-        Adds the stack to ``app``'s construct tree.
+    The two stacks are joined by CDK cross-region references, so the
+    distribution takes the web ACL's ARN without a hand-copied value.
 
     Args:
-        app: The CDK app. ``cdk.json`` or ``cdk -c projectName=...`` supplies ``projectName``.
-        environment: ``dev``, ``qa``, or ``prod``.
+        scope: The parent construct: the pipeline stack, or an ``App`` in tests.
+        construct_id: The stage id, for example ``Dev``; also the pipeline stage's name.
 
     Keyword Args:
+        project_name: The ``projectName`` context value, unchecked.
+        environment: ``dev``, ``qa``, or ``prod``.
+        account: The AWS account both stacks deploy to, or ``None`` for the CLI's default.
         api_dir: The directory holding the API's ``Dockerfile``.
         web_dist: The directory holding the built SPA (``npm run build``).
 
     Raises:
-        ValueError: ``projectName`` is missing or invalid, or ``environment`` is unknown.
-
-    Returns:
-        The stack, named ``<projectName>-<environment>``, with the same Hosted UI prefix.
+        ValueError: ``project_name`` is invalid, or ``environment`` is unknown.
     """
-    name = environment_name(app.node.try_get_context("projectName"), environment)
-    return EnvironmentStack(
-        app,
-        name,
-        env=Environment(account=os.environ.get("CDK_DEFAULT_ACCOUNT"), region=HOME_REGION),
-        environment=environment,
-        api_dir=api_dir,
-        web_dist=web_dist,
-        cognito_domain_prefix=name,
-    )
+
+    def __init__(
+        self,
+        scope: Construct,
+        construct_id: str,
+        *,
+        project_name: object,
+        environment: str,
+        account: str | None,
+        api_dir: str,
+        web_dist: str,
+    ) -> None:
+        name = environment_name(project_name, environment)
+        super().__init__(scope, construct_id)
+        #: ``dev``, ``qa``, or ``prod``.
+        self.environment = environment
+        #: The web ACL stack, ``<name>-edge``, in ``us-east-1``.
+        self.edge_stack = EdgeStack(
+            self,
+            "Edge",
+            stack_name=f"{name}-edge",
+            env=Environment(account=account, region=EDGE_REGION),
+            cross_region_references=True,
+        )
+        #: The site, sign-in, and API stack, ``<name>``, in the home region.
+        self.environment_stack = EnvironmentStack(
+            self,
+            "Site",
+            stack_name=name,
+            env=Environment(account=account, region=HOME_REGION),
+            cross_region_references=True,
+            environment=environment,
+            api_dir=api_dir,
+            web_dist=web_dist,
+            cognito_domain_prefix=name,
+            web_acl_arn=self.edge_stack.web_acl_arn,
+        )

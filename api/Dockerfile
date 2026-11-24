@@ -2,7 +2,7 @@
 # Outside Lambda the adapter does not start, and /server runs on its own.
 # Build: docker build --platform linux/arm64 -t proof-api api
 
-FROM --platform=$BUILDPLATFORM golang:1.27 AS build
+FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.27 AS build
 ARG TARGETOS TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum ./

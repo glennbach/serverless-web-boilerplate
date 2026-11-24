@@ -81,3 +81,15 @@ def test_bad_pipeline_settings_fail_at_synth(tmp_path, dist, monkeypatch, key, v
     context = {"repository": "example-org/proof", "connectionArn": ARN, key: value}
     with pytest.raises(ValueError, match=key):
         pipeline_stack(_app(tmp_path, **context), api_dir=str(INFRA.parent / "api"), web_dist=str(dist))
+
+
+def test_api_image_pulls_nothing_from_docker_hub():
+    # CodeBuild shares egress IPs, so anonymous Docker Hub pulls hit its per-IP rate limit during Assets.
+    dockerfile = (INFRA.parent / "api" / "Dockerfile").read_text()
+    images = [line.split()[1] if "--platform" not in line else line.split()[2]
+              for line in dockerfile.splitlines() if line.startswith("FROM ")]
+    images += [word.removeprefix("--from=") for word in dockerfile.split() if word.startswith("--from=") and "/" in word]
+    assert images
+    for image in images:
+        host = image.split("/")[0] if "/" in image else ""
+        assert "." in host, f"{image} has no registry host, so it comes from Docker Hub"

@@ -198,12 +198,14 @@ Push to `main`. Dev and QA deploy on their own. To ship to prod, approve `Promot
 Do these in order:
 
 1. Cancel each distribution's Free plan subscription, if it has one. A subscribed distribution cannot be deleted.
-2. Delete `swb-proof-prod`, `swb-proof-qa`, and `swb-proof-dev`, for example with `aws cloudformation delete-stack --region us-west-2 --stack-name swb-proof-qa`. Then delete the three `-edge` stacks in `us-east-1`. The `us-west-2` stacks import from them.
+2. Delete `swb-proof-prod`, `swb-proof-qa`, and `swb-proof-dev`, for example with `aws cloudformation delete-stack --region us-west-2 --stack-name swb-proof-qa`. Then delete the three `-edge` stacks in `us-east-1`. WAF refuses to delete a web ACL while a distribution still uses it.
 3. Run `cdk destroy swb-proof-pipeline`. `cdk destroy` synthesizes the app first, so `web/dist` must exist. Run `npm run build` in `web/` first.
+4. Delete `swb-proof-pipeline-support-us-east-1` in `us-east-1`, if it exists. `cdk destroy swb-proof-pipeline` does not remove it.
 
 Some things remain:
 
 - Prod's User Pool and log groups. To delete them, turn off the pool's deletion protection, then delete the pool and the log groups by hand.
+- The pipeline's artifact bucket in `us-west-2`, and the support stack's replication bucket in `us-east-1`. Both are retained. Empty and delete them by hand.
 - The `CDKToolkit` bootstrap stacks, with the image and file assets they hold.
 - Small log groups that CDK's custom-resource handlers create at runtime, which no stack owns.
 

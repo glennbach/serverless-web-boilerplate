@@ -7,17 +7,20 @@
 
 ## P2 — Backlog
 
-- [ ] **T007** Plan the full platform: pipeline, QA, prod, WAF, and DNS #docs #infra
-  - Acceptance: Plan written under docs/plans/ and linked here. Covers CodePipeline and CodeBuild (one image and one SPA bundle per commit, per-environment config.json, manual approval before prod), QA and prod stacks, WAF, the shared hosted zone and us-east-1 certificate, custom domains, and removing the dev CloudFront-URL exception. Settles ADR 0001 open questions 2-4: stack layout, log retention, and the CloudFront flat-rate Free plan. The user has vetted it.
-  - Context: Phase 2b. Source: docs/adr/0001-serverless-go-platform-architecture.md.
-  - Blocked by: T005
-
 - [ ] **T008** Build the full platform #feature #infra
-  - Acceptance: A push to main deploys dev and then QA through CodePipeline. Prod deploys after manual approval. Each environment is served on its custom domain behind WAF, and sign-in works in each.
-  - Context: Follows the T007 plan. The plan may split this into smaller tasks.
+  - Acceptance: A push to main deploys dev and then QA through CodePipeline. Prod deploys after manual approval. Each environment is served on its *.cloudfront.net URL behind its own WAF web ACL, and sign-in works in each. Each distribution stays eligible for the CloudFront flat-rate Free plan and is subscribed where the account allows (nice-to-have: a refusal is recorded here, and that environment runs pay-as-you-go).
+  - Context: Follows the T007 plan: docs/plans/2026-11-23-platform.md (Tasks 1-3 build infra/, Task 4 is the go-live run by hand).
   - Blocked by: T007,T009
+  - Claimed: claude | 2026-11-23 | feat/platform
 
 ## Done (recent)
+
+- [x] **T007** Plan the full platform: pipeline, QA, prod, and WAF #docs #infra
+  - Acceptance: Plan written under docs/plans/ and linked here. Covers CodePipeline and CodeBuild (one image and one SPA bundle per commit, per-environment config.json, manual approval before prod), QA and prod stacks, and WAF. Every environment uses its *.cloudfront.net URL, with no hosted zone, certificate, or custom domain (ADR 0001 Decision 8 amended). Settles ADR 0001 open questions 2-4: stack layout, log retention, and the CloudFront flat-rate Free plan. The user has vetted it.
+  - Context: Phase 2b. Source: docs/adr/0001-serverless-go-platform-architecture.md. Plan: docs/plans/2026-11-23-platform.md. Decided 2026-11-23 with the user: GitHub source through CodeConnections; no domain, raw CloudFront URLs in dev, QA, and prod; flat-rate Free plan on all three distributions; logs 1 month in dev/QA, 6 months in prod. ADR 0001 (Decision 8, open questions 2-4, cost) and ADR 0003 (edge and pipeline stack names) amended.
+  - Blocked by: T005
+  - Outcome: completed
+  - Closed: 2026-11-23
 
 - [x] **T006** Verify the adapter replaces a forged x-amzn-request-context header #ops #infra #security
   - Acceptance: On dev, GET /api/me with a valid token and a forged x-amzn-request-context header naming another email returns the token's email. Result recorded here, with the adapter version tested.

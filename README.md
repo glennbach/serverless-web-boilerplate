@@ -179,8 +179,19 @@ cd infra && uv run pytest -q
    CDK may also create `swb-proof-pipeline-support-us-east-1`, which holds pipeline artifacts for the `us-east-1` stacks.
 5. **Approve prod** when the first run reaches `PromoteToProd`.
 6. **Subscribe each distribution to the flat-rate Free plan (optional).** In the CloudFront console, choose the Free plan for each of the three distributions, and keep the attached web ACL. If the account cannot subscribe, the environments run pay-as-you-go.
-7. **Create users.** Self sign-up is off. For each environment, using its stack's `UserPoolId` output, create a user, and Cognito emails a temporary password:
+7. **Create users.** Self sign-up is off. List each environment's site URL and user pool ID; drop the `[?...]` filter to see every output:
    ```bash
+   for env in dev qa prod; do
+     echo "== $env"
+     aws cloudformation describe-stacks --region us-west-2 --stack-name "swb-proof-$env" \
+       --query "Stacks[0].Outputs[?OutputKey=='SiteUrl' || OutputKey=='UserPoolId'].[OutputKey,OutputValue]" \
+       --output text
+   done
+   ```
+   For each environment, set `POOL` to its `UserPoolId` and create a user, and Cognito emails a temporary password:
+   ```bash
+   POOL=$(aws cloudformation describe-stacks --region us-west-2 --stack-name swb-proof-dev \
+     --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" --output text)
    aws cognito-idp admin-create-user --region us-west-2 --user-pool-id "$POOL" \
      --username "$EMAIL" --user-attributes Name=email,Value="$EMAIL" Name=email_verified,Value=true \
      --desired-delivery-mediums EMAIL

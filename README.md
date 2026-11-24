@@ -19,17 +19,18 @@ The proof: a one-page React SPA that calls a Go API and shows the signed-in user
 |---|---|---|---|
 | 1 | The proof application, built and tested on a laptop | T001, T002 | Implemented ([plan](docs/plans/2026-11-22-proof-application.md)) |
 | 2a | One dev environment on AWS, deployed by hand with `cdk deploy` | T003–T006 | Deployed and proven end to end (T005) ([plan](docs/plans/2026-11-22-dev-environment.md)) |
-| 2b | Pipeline, QA, prod, WAF, and DNS | T007, T008 | Not started |
+| 2b | Pipeline, QA, prod, and WAF, on `*.cloudfront.net` URLs (no custom domain) | T007, T008 | Implemented ([plan](docs/plans/2026-11-23-platform.md)); go-live is T008 |
 
 ## Start a new project from this repo
 
-A copy of this repository deploys as its own project, with its own stacks, User Pool, and URLs, once you change one value.
+A copy of this repository deploys as its own project, with its own stacks, User Pools, and URLs, once you change a few values.
 
-1. **Copy the repository with fresh history.** Clone it, delete `.git`, and run `git init`. Once this repository is on GitHub and marked as a template repository, "Use this template" does the same. Don't fork it: a fork shares this repository's history, and its pull requests target this repository by default.
+1. **Copy the repository with fresh history.** Clone it, delete `.git`, run `git init`, and push it to a new GitHub repository with `main` as its branch. Once this repository is on GitHub and marked as a template repository, "Use this template" does the same. Don't fork it: a fork shares this repository's history, and its pull requests target this repository by default.
 2. **Set `projectName` in `infra/cdk.json` before the first deploy.** Use lowercase letters, digits, and hyphens. Start with a letter, don't end with a hyphen, and use at most 58 characters. Don't include `aws`, `amazon`, or `cognito` (see [ADR 0003](docs/adr/0003-deployed-names-from-project-name.md)). Choose a distinctive name, because Hosted UI prefixes are unique per region across all AWS accounts. A copy that keeps `swb-proof` would update this project's stacks in the same account.
-3. **Bootstrap the account** if it has not been bootstrapped in `us-west-2`: `cdk bootstrap aws://<account>/us-west-2`.
-4. **Deploy:** build the SPA and run `cdk deploy <projectName>-dev`, as described under [Deploy](#deploy).
-5. **Create a user** with the `admin-create-user` command under [Deploy](#deploy).
+3. **Set `repository` (`owner/name`) and `connectionArn` in `infra/cdk.json`**, from the GitHub connection described under [One-time setup](#one-time-setup).
+4. **Follow [One-time setup](#one-time-setup):** bootstrap `us-west-2` and `us-east-1`, deploy the pipeline once, and create users.
+
+An AWS account holds at most three CloudFront flat-rate Free plans, and one project's three environments use them all. A second project in the same account runs pay-as-you-go, which costs about $8 per month per environment for WAF.
 
 ---
 
@@ -126,23 +127,29 @@ The real Hosted UI and token endpoint, the API Gateway JWT authorizer and CORS, 
 
 ---
 
-## Phase 2a: the dev environment
+## Phase 2b: the pipeline and three environments
 
-`infra/` is one CDK stack, `swb-proof-dev` (`<projectName>-dev`, [ADR 0003](docs/adr/0003-deployed-names-from-project-name.md)), in `us-west-2`. Nothing is created in `us-east-1`. The stack contains:
+`infra/` is a CDK pipeline, `swb-proof-pipeline` (`<projectName>-pipeline`), in `us-west-2`. A push to `main` on GitHub runs it. It tests the Go API, the SPA, and the CDK. It builds the SPA and the API image once, then deploys them to dev, then QA, then prod after a manual approval. It updates itself first, so a change to the pipeline ships the same way.
 
-- an S3 bucket and a CloudFront distribution for the SPA, on its `*.cloudfront.net` URL
-- a Cognito User Pool, with its Hosted UI prefix domain and the SPA's PKCE client
-- the `api/` image on Lambda, with `AUTH_MODE=aws` and X-Ray tracing
-- an HTTP API with a JWT authorizer, CORS, and access logs
-- the deployed `config.json`
+Each environment (`dev`, `qa`, `prod`) is two stacks ([ADR 0003](docs/adr/0003-deployed-names-from-project-name.md)):
 
-See the [plan](docs/plans/2026-11-22-dev-environment.md).
+- `<projectName>-<env>-edge`, in `us-east-1`, holds the environment's WAF web ACL: a rate limit of 1,000 requests per 5 minutes per IP, plus three AWS managed rule groups.
+- `<projectName>-<env>`, in `us-west-2`, holds:
+  - an S3 bucket and a CloudFront distribution for the SPA, on its `*.cloudfront.net` URL, behind that web ACL
+  - a Cognito User Pool, with its Hosted UI prefix domain and the SPA's PKCE client
+  - the `api/` image on Lambda, with `AUTH_MODE=aws` and X-Ray tracing
+  - an HTTP API with a JWT authorizer, CORS, and access logs
+  - the environment's own `config.json`
+
+Dev and QA keep logs for a month and delete everything with their stacks. Prod keeps logs for six months, and its User Pool and log groups survive the deletion of its stack, with deletion protection on the pool. After each environment deploys, a smoke step checks that its `config.json` is the deployed one and that `/api/me` without a token returns 401.
+
+See the [plan](docs/plans/2026-11-23-platform.md). Phase 2a's hand-deployed dev stack, `swb-proof-dev`, is the pipeline's dev stack. The pipeline updates it in place, and its users stay.
 
 ### Prerequisites
 
-- AWS credentials for the target account.
-- Docker running, because `cdk deploy` builds the arm64 API image.
-- `uv`.
+- AWS credentials for the target account. The account's plan must be Paid, not the AWS Free Tier account plan, for the CloudFront flat-rate Free plan. That plan is optional.
+- Docker running, for `cdk diff` and `cdk deploy` of the pipeline.
+- `uv`, Node.js 26, and Go, for the tests.
 - AWS CDK CLI 2.1149.0 or later. Older CLIs cannot read the assembly that the pinned `aws-cdk-lib` writes. Use `npx aws-cdk@2.1149.0 ...` if the installed `cdk` is older.
 
 ### Test
@@ -151,50 +158,63 @@ See the [plan](docs/plans/2026-11-22-dev-environment.md).
 cd infra && uv run pytest -q
 ```
 
-`infra/tests/test_proof_dev.py` checks the synthesized template:
+| Suite | What it proves |
+|---|---|
+| `infra/tests/test_environment.py` | One environment's stacks, synthesized for dev, QA, and prod. The pool schema, the client's exact callback and logout URLs, CORS for exactly the site origin, `GET /api/me` behind the JWT authorizer, the arm64 image, the JSON access logs, the SPA uploads, their cache headers, and that the local `config.json` is never uploaded. Log retention and what prod keeps. Dev's logical ids match the deployed stack. The web ACL fits the flat-rate Free plan, and the distribution stays eligible for it. Names come from `projectName`, and invalid names fail at synth. |
+| `infra/tests/test_pipeline.py` | Dev, then QA, then prod after approval, with a smoke step after each. The source is `main` on GitHub. The synth step runs every test suite. Every environment deploys the same image and SPA files. Missing pipeline settings fail at synth. |
 
-- Nothing in it refers to `us-east-1`, and the bucket is private behind CloudFront Origin Access Control.
-- The Cognito schema, the client's exact callback and logout URLs, and the classic Hosted UI on the prefix domain.
-- The arm64 image, `AUTH_MODE=aws`, and active tracing.
-- CORS for exactly the site origin, `GET /api/me` as the only route, behind the JWT authorizer.
-- The JSON access-log format.
-- The two SPA uploads and their cache headers, and that the local `config.json` is never uploaded.
-- The stack outputs.
-- The stack name and the Hosted UI prefix come from `projectName`, and an invalid name fails at synth.
+### One-time setup
 
-### Deploy
+1. **Put the repository on GitHub** with `main` as its default branch.
+2. **Create a connection.** In the AWS console, go to Developer Tools → Settings → Connections, in `us-west-2`, and create a GitHub connection. Install the AWS Connector app for this repository only. When its status is `Available`, put its ARN in `connectionArn` and `owner/name` in `repository` in `infra/cdk.json`. Commit and push.
+3. **Bootstrap both regions**, once per account:
+   ```bash
+   cd infra && cdk bootstrap aws://<account>/us-west-2 aws://<account>/us-east-1
+   ```
+4. **Deploy the pipeline once by hand.** After this, it deploys itself.
+   ```bash
+   cd web && npm ci && npm run build
+   cd ../infra && cdk deploy swb-proof-pipeline
+   ```
+   CDK may also create `swb-proof-pipeline-support-us-east-1`, which holds pipeline artifacts for the `us-east-1` stacks.
+5. **Approve prod** when the first run reaches `PromoteToProd`.
+6. **Subscribe each distribution to the flat-rate Free plan (optional).** In the CloudFront console, choose the Free plan for each of the three distributions, and keep the attached web ACL. If the account cannot subscribe, the environments run pay-as-you-go.
+7. **Create users.** Self sign-up is off. For each environment, using its stack's `UserPoolId` output, create a user, and Cognito emails a temporary password:
+   ```bash
+   aws cognito-idp admin-create-user --region us-west-2 --user-pool-id "$POOL" \
+     --username "$EMAIL" --user-attributes Name=email,Value="$EMAIL" Name=email_verified,Value=true \
+     --desired-delivery-mediums EMAIL
+   ```
+   Open the stack's `SiteUrl`, sign in, and set a new password. The page shows the email.
 
-```bash
-aws sts get-caller-identity                     # the intended account
-cd web && npm ci && npm test && npm run build    # one bundle for every environment
-cd ../infra && uv run pytest -q
-cdk bootstrap aws://$(aws sts get-caller-identity --query Account --output text)/us-west-2   # once per account
-cdk deploy swb-proof-dev
-```
+To inspect one stack, select it by construct path, for example `cdk diff swb-proof-pipeline/Dev/Site` (`cdk ls` lists them all).
 
-The deploy prints `SiteUrl`, `ApiUrl`, `UserPoolId`, `UserPoolClientId`, `CognitoDomainUrl`, `ApiAccessLogGroup`, `ApiFunctionLogGroup`, and `ApiFunctionName`.
+### Releasing
 
-Hosted UI prefixes are unique per region across all AWS accounts. If `swb-proof-dev` is taken, change `projectName` in `infra/cdk.json`. That renames the stack too.
-
-Self sign-up is off. Create a user, and Cognito emails a temporary password:
-
-```bash
-aws cognito-idp admin-create-user --region us-west-2 --user-pool-id "$POOL" \
-  --username "$EMAIL" --user-attributes Name=email,Value="$EMAIL" Name=email_verified,Value=true \
-  --desired-delivery-mediums EMAIL
-```
-
-Open `SiteUrl`, sign in, and set a new password. The page shows the email. The full end-to-end check is Task 5 of the plan (T005).
+Push to `main`. Dev and QA deploy on their own. To ship to prod, approve `PromoteToProd` in the CodePipeline console. An approval expires after 7 days, and the run must then be started again.
 
 ### Tear down
 
-```bash
-cd infra && cdk destroy swb-proof-dev
-```
+Do these in order:
 
-This removes the bucket, the pool and its users, the API, and the stack's log groups. Some things remain:
+1. Cancel each distribution's Free plan subscription, if it has one. A subscribed distribution cannot be deleted.
+2. Delete `swb-proof-prod`, `swb-proof-qa`, and `swb-proof-dev`, for example with `aws cloudformation delete-stack --region us-west-2 --stack-name swb-proof-qa`. Then delete the three `-edge` stacks in `us-east-1`. The `us-west-2` stacks import from them.
+3. Run `cdk destroy swb-proof-pipeline`. `cdk destroy` synthesizes the app first, so `web/dist` must exist. Run `npm run build` in `web/` first.
 
-- The `CDKToolkit` bootstrap stack, with the image and file assets it holds.
-- One small log group, `/aws/lambda/swb-proof-dev-CustomS3AutoDeleteObjects…`. CDK's bucket-emptying handler creates it at runtime, and the stack does not own it.
+Some things remain:
 
-`cdk destroy` synthesizes the app first, so `web/dist` must exist. Run `npm run build` in `web/` first.
+- Prod's User Pool and log groups. To delete them, turn off the pool's deletion protection, then delete the pool and the log groups by hand.
+- The `CDKToolkit` bootstrap stacks, with the image and file assets they hold.
+- Small log groups that CDK's custom-resource handlers create at runtime, which no stack owns.
+
+### Adding a custom domain later
+
+The Proof has no domain, so every environment uses its `*.cloudfront.net` URL ([ADR 0001](docs/adr/0001-serverless-go-platform-architecture.md), Decision 8). To add a domain, amend Decision 8 first. Then:
+
+- Add a Route 53 hosted zone in its own stack, retained when that stack is deleted.
+- Add an ACM certificate to `EdgeStack`, validated by DNS. CloudFront requires the certificate to be in `us-east-1`.
+- Give the distribution `domain_names` and `certificate`.
+- Add alias records.
+- Change `site_url` to the custom domain. It already drives the Cognito callback and logout URLs and the API's CORS origin.
+
+A flat-rate plan covers one apex domain per distribution.

@@ -35,10 +35,10 @@ def test_dev_then_qa_then_approved_prod(pipeline):
         assert any(a["Name"].startswith("Smoke") for a in s["Actions"])
 
 
-def test_source_is_main_on_github(pipeline):
+def test_source_is_master_on_github(pipeline):
     source = _stages(pipeline)[0]["Actions"][0]
     assert source["ActionTypeId"]["Provider"] == "CodeStarSourceConnection"
-    expected = {"FullRepositoryId": "example-org/proof", "BranchName": "main", "ConnectionArn": ARN}
+    expected = {"FullRepositoryId": "example-org/proof", "BranchName": "master", "ConnectionArn": ARN}
     assert all(source["Configuration"][k] == v for k, v in expected.items())
 
 

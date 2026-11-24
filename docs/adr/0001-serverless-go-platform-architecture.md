@@ -114,7 +114,7 @@ The bundle does not embed environment-specific endpoints. Deploy writes a `confi
 The pipeline is CDK Pipelines (`aws_cdk.pipelines.CodePipeline`), whose source is the GitHub repository, read through an AWS CodeConnections connection. One synth step runs the tests, builds the SPA, and synthesizes the app. CDK publishes the image and the bundle once, as assets, and each environment deploys those same assets. The image lives in the CDK bootstrap ECR repository.
 
 Stages:
-- **Dev:** Deploys automatically on every push to `main`, with no approval gate.
+- **Dev:** Deploys automatically on every push to `master`, with no approval gate.
 - **QA:** Deploys after dev.
 - **Prod:** Requires a manual approval action (see Decision 4).
 
@@ -237,7 +237,7 @@ This proof has no secret values. The Cognito client id, User Pool id, Hosted UI 
 
 **Decision.**
 - **Local:** Day-to-day coding on Mac laptops. The Go server and the Vite dev server run on the host. This environment does not call AWS and does not sign in. See ADR 0002.
-- **Dev on AWS:** A shared environment that deploys automatically on push to `main`, for testing real AWS behavior, including the JWT authorizer.
+- **Dev on AWS:** A shared environment that deploys automatically on push to `master`, for testing real AWS behavior, including the JWT authorizer.
 - **QA on AWS:** Pre-production validation.
 - **Prod on AWS:** Promoted with manual approval.
 - Each environment has its own Cognito User Pool and its own `*.cloudfront.net` URL. See Decision 8.

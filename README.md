@@ -25,7 +25,7 @@ The proof: a one-page React SPA that calls a Go API and shows the signed-in user
 
 A copy of this repository deploys as its own project, with its own stacks, User Pools, and URLs, once you change a few values.
 
-1. **Copy the repository with fresh history.** Clone it, delete `.git`, run `git init`, and push it to a new GitHub repository with `main` as its branch. Once this repository is on GitHub and marked as a template repository, "Use this template" does the same. Don't fork it: a fork shares this repository's history, and its pull requests target this repository by default.
+1. **Copy the repository with fresh history.** Clone it, delete `.git`, run `git init`, and push it to a new GitHub repository with `master` as its branch. Once this repository is on GitHub and marked as a template repository, "Use this template" does the same. Don't fork it: a fork shares this repository's history, and its pull requests target this repository by default.
 2. **Set `projectName` in `infra/cdk.json` before the first deploy.** Use lowercase letters, digits, and hyphens. Start with a letter, don't end with a hyphen, and use at most 58 characters. Don't include `aws`, `amazon`, or `cognito` (see [ADR 0003](docs/adr/0003-deployed-names-from-project-name.md)). Choose a distinctive name, because Hosted UI prefixes are unique per region across all AWS accounts. A copy that keeps `swb-proof` would update this project's stacks in the same account.
 3. **Set `repository` (`owner/name`) and `connectionArn` in `infra/cdk.json`**, from the GitHub connection described under [One-time setup](#one-time-setup).
 4. **Follow [One-time setup](#one-time-setup):** bootstrap `us-west-2` and `us-east-1`, deploy the pipeline once, and create users.
@@ -129,7 +129,7 @@ The real Hosted UI and token endpoint, the API Gateway JWT authorizer and CORS, 
 
 ## Phase 2b: the pipeline and three environments
 
-`infra/` is a CDK pipeline, `swb-proof-pipeline` (`<projectName>-pipeline`), in `us-west-2`. A push to `main` on GitHub runs it. It tests the Go API, the SPA, and the CDK. It builds the SPA and the API image once, then deploys them to dev, then QA, then prod after a manual approval. It updates itself first, so a change to the pipeline ships the same way.
+`infra/` is a CDK pipeline, `swb-proof-pipeline` (`<projectName>-pipeline`), in `us-west-2`. A push to `master` on GitHub runs it. It tests the Go API, the SPA, and the CDK. It builds the SPA and the API image once, then deploys them to dev, then QA, then prod after a manual approval. It updates itself first, so a change to the pipeline ships the same way.
 
 Each environment (`dev`, `qa`, `prod`) is two stacks ([ADR 0003](docs/adr/0003-deployed-names-from-project-name.md)):
 
@@ -161,11 +161,11 @@ cd infra && uv run pytest -q
 | Suite | What it proves |
 |---|---|
 | `infra/tests/test_environment.py` | One environment's stacks, synthesized for dev, QA, and prod. The pool schema, the client's exact callback and logout URLs, CORS for exactly the site origin, `GET /api/me` behind the JWT authorizer, the arm64 image, the JSON access logs, the SPA uploads, their cache headers, and that the local `config.json` is never uploaded. Log retention and what prod keeps. Dev's logical ids match the deployed stack. The web ACL fits the flat-rate Free plan, and the distribution stays eligible for it. Names come from `projectName`, and invalid names fail at synth. |
-| `infra/tests/test_pipeline.py` | Dev, then QA, then prod after approval, with a smoke step after each. The source is `main` on GitHub. The synth step runs every test suite. Every environment deploys the same image and SPA files. Missing pipeline settings fail at synth. |
+| `infra/tests/test_pipeline.py` | Dev, then QA, then prod after approval, with a smoke step after each. The source is `master` on GitHub. The synth step runs every test suite. Every environment deploys the same image and SPA files. Missing pipeline settings fail at synth. |
 
 ### One-time setup
 
-1. **Put the repository on GitHub** with `main` as its default branch.
+1. **Put the repository on GitHub** with `master` as its default branch.
 2. **Create a connection.** In the AWS console, go to Developer Tools → Settings → Connections, in `us-west-2`, and create a GitHub connection. Install the AWS Connector app for this repository only. When its status is `Available`, put its ARN in `connectionArn` and `owner/name` in `repository` in `infra/cdk.json`. Commit and push.
 3. **Bootstrap both regions**, once per account:
    ```bash
@@ -191,7 +191,7 @@ To inspect one stack, select it by construct path, for example `cdk diff swb-pro
 
 ### Releasing
 
-Push to `main`. Dev and QA deploy on their own. To ship to prod, approve `PromoteToProd` in the CodePipeline console. An approval expires after 7 days, and the run must then be started again.
+Push to `master`. Dev and QA deploy on their own. To ship to prod, approve `PromoteToProd` in the CodePipeline console. An approval expires after 7 days, and the run must then be started again.
 
 ### Tear down
 

@@ -1,4 +1,4 @@
-"""The Project's delivery pipeline: a push to ``main`` deploys dev, then QA, then prod after approval.
+"""The Project's delivery pipeline: a push to ``master`` deploys dev, then QA, then prod after approval.
 
 See docs/plans/2026-11-23-platform.md and ADR 0001, Decisions 3 and 4.
 """
@@ -13,7 +13,7 @@ from constructs import Construct
 from environment import ENVIRONMENTS, HOME_REGION, EnvironmentStage, checked_project_name
 
 #: The branch whose pushes start the pipeline.
-BRANCH = "main"
+BRANCH = "master"
 
 #: A GitHub repository, ``owner/name``.
 REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")

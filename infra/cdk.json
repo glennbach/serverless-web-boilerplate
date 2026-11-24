@@ -2,8 +2,8 @@
   "app": "uv run python app.py",
   "context": {
     "projectName": "swb-proof",
-    "repository": "",
-    "connectionArn": "",
+    "repository": "glennbach/serverless-web-boilerplate",
+    "connectionArn": "arn:aws:codeconnections:us-west-2:131067624433:connection/5a777045-b5f8-409b-a528-ea7c577ed45b",
     "@aws-cdk-containers/ecs-service-extensions:enableDefaultLogDriver": true,
     "@aws-cdk/aws-apigateway:authorizerChangeDeploymentLogicalId": true,
     "@aws-cdk/aws-apigateway:disableCloudWatchRole": true,

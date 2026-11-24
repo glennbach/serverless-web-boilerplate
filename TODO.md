@@ -9,7 +9,7 @@
 
 - [ ] **T008** Build the full platform #feature #infra
   - Acceptance: A push to main deploys dev and then QA through CodePipeline. Prod deploys after manual approval. Each environment is served on its *.cloudfront.net URL behind its own WAF web ACL, and sign-in works in each. Each distribution stays eligible for the CloudFront flat-rate Free plan and is subscribed where the account allows (nice-to-have: a refusal is recorded here, and that environment runs pay-as-you-go).
-  - Context: Follows the T007 plan: docs/plans/2026-11-23-platform.md (Tasks 1-3 build infra/, Task 4 is the go-live run by hand).
+  - Context: Follows the T007 plan: docs/plans/2026-11-23-platform.md (Tasks 1-3 build infra/, Task 4 is the go-live run by hand). Tasks 1-3 implemented on branch feat/platform (8726384..ef20b2d), 61 infra tests pass, final review fixes applied. Remaining: Task 4 go-live (GitHub repo + connection, cdk.json repository/connectionArn, bootstrap us-west-2 and us-east-1, cdk deploy swb-proof-pipeline, approve prod, optional Free plan subscriptions, users, sign-in in each).
   - Blocked by: T007,T009
   - Claimed: claude | 2026-11-23 | feat/platform
 

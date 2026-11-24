@@ -1,6 +1,6 @@
-"""The phase 2a dev environment: one stack in the home region.
+"""One Environment of the Project (dev, QA, or prod): its site, sign-in, and API in the home region.
 
-See docs/plans/2026-11-22-dev-environment.md and ADR 0001 / ADR 0002.
+See docs/plans/2026-11-23-platform.md, docs/plans/2026-11-22-dev-environment.md, and ADRs 0001-0003.
 """
 
 import json
@@ -36,19 +36,28 @@ MAX_PROJECT_NAME = 58
 #: Words Cognito refuses anywhere in a Hosted UI domain prefix.
 RESERVED_WORDS = ("aws", "amazon", "cognito")
 
+#: The Environments of a Project, in promotion order.
+ENVIRONMENTS = ("dev", "qa", "prod")
 
-def environment_name(project_name: object, environment: str) -> str:
-    """The name of one Environment of a Project: its stack name and its Hosted UI prefix (ADR 0003).
+#: How long each Environment keeps its CloudWatch logs (ADR 0001, open question 3).
+LOG_RETENTION = {
+    "dev": logs.RetentionDays.ONE_MONTH,
+    "qa": logs.RetentionDays.ONE_MONTH,
+    "prod": logs.RetentionDays.SIX_MONTHS,
+}
+
+
+def checked_project_name(project_name: object) -> str:
+    """Check a ``projectName`` against the rule in ADR 0003.
 
     Args:
         project_name: The ``projectName`` context value, unchecked.
-        environment: ``dev``, ``qa``, or ``prod``.
 
     Raises:
-        ValueError: ``project_name`` is missing or would not make a valid prefix.
+        ValueError: ``project_name`` is missing or would not make a valid Hosted UI prefix.
 
     Returns:
-        ``<project_name>-<environment>``.
+        ``project_name``, unchanged.
     """
     if not isinstance(project_name, str):
         raise ValueError("projectName is not set in infra/cdk.json")
@@ -62,7 +71,26 @@ def environment_name(project_name: object, environment: str) -> str:
     for word in RESERVED_WORDS:
         if word in project_name:
             raise ValueError(f"projectName {project_name!r} contains {word!r}, which Cognito refuses in a prefix")
-    return f"{project_name}-{environment}"
+    return project_name
+
+
+def environment_name(project_name: object, environment: str) -> str:
+    """The name of one Environment of a Project: its stack name and its Hosted UI prefix (ADR 0003).
+
+    Args:
+        project_name: The ``projectName`` context value, unchecked.
+        environment: ``dev``, ``qa``, or ``prod``.
+
+    Raises:
+        ValueError: ``project_name`` is invalid, or ``environment`` is not one of ``ENVIRONMENTS``.
+
+    Returns:
+        ``<project_name>-<environment>``.
+    """
+    if environment not in ENVIRONMENTS:
+        raise ValueError(f"environment {environment!r} is not one of {', '.join(ENVIRONMENTS)}")
+    return f"{checked_project_name(project_name)}-{environment}"
+
 
 #: One JSON object per API request. ``integrationRequestId`` is the Lambda
 #: request id, which joins an access-log entry to Lambda logs and X-Ray.
@@ -117,22 +145,23 @@ class _AccessLogSettings:
         return apigw.AccessLogFormat.custom(json.dumps(ACCESS_LOG_FIELDS))
 
 
-class ProofDevStack(Stack):
-    """The dev site, sign-in, and API for the proof, with nothing in ``us-east-1``.
+class EnvironmentStack(Stack):
+    """The site, sign-in, and API of one Environment, in the home region.
 
     The SPA is served from a private S3 bucket through CloudFront on its
-    ``*.cloudfront.net`` URL.
-
-    Build it with ``dev_stack``, which names it ``<projectName>-dev``.
+    ``*.cloudfront.net`` URL. Prod keeps its User Pool and log groups if the
+    stack is deleted; dev and QA delete them with the stack.
 
     Args:
-        scope: The parent construct, normally the CDK ``App``.
-        construct_id: The stack name.
+        scope: The parent construct.
+        construct_id: The construct id, and the stack name unless ``stack_name`` is given.
 
     Keyword Args:
+        environment: ``dev``, ``qa``, or ``prod``.
         api_dir: The directory holding the API's ``Dockerfile``.
         web_dist: The directory holding the built SPA (``npm run build``).
         cognito_domain_prefix: The Hosted UI prefix domain.
+        web_acl_arn: The ARN of the WAF web ACL in front of the distribution, if any.
         **kwargs: Passed to ``Stack``, for example ``env``.
     """
 
@@ -141,12 +170,17 @@ class ProofDevStack(Stack):
         scope: Construct,
         construct_id: str,
         *,
+        environment: str,
         api_dir: str,
         web_dist: str,
         cognito_domain_prefix: str,
+        web_acl_arn: str | None = None,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+        keep = environment == "prod"
+        removal = RemovalPolicy.RETAIN if keep else RemovalPolicy.DESTROY
+        retention = LOG_RETENTION[environment]
 
         #: The private bucket that holds the SPA.
         self.bucket = s3.Bucket(
@@ -169,13 +203,14 @@ class ProofDevStack(Stack):
             ),
             default_root_object="index.html",
             price_class=cloudfront.PriceClass.PRICE_CLASS_100,
+            web_acl_id=web_acl_arn,
         )
         #: The site origin, ``https://<distribution>.cloudfront.net``, with no trailing slash.
         self.site_url = f"https://{self.distribution.distribution_domain_name}"
 
         # Sign-in alias, case sensitivity, and the email attribute's required/mutable flags are
         # fixed at pool creation; changing them means a new pool.
-        #: The dev User Pool. Email is the username and is on the ID token.
+        #: The Environment's User Pool. Email is the username and is on the ID token.
         self.user_pool = cognito.UserPool(
             self,
             "Users",
@@ -189,7 +224,8 @@ class ProofDevStack(Stack):
             account_recovery=cognito.AccountRecovery.EMAIL_ONLY,
             mfa=cognito.Mfa.OFF,
             feature_plan=cognito.FeaturePlan.LITE,
-            removal_policy=RemovalPolicy.DESTROY,
+            deletion_protection=keep,
+            removal_policy=removal,
         )
         #: The Hosted UI prefix domain, ``https://<prefix>.auth.us-west-2.amazoncognito.com``.
         self.user_pool_domain = self.user_pool.add_domain(
@@ -222,7 +258,7 @@ class ProofDevStack(Stack):
             environment={"AUTH_MODE": "aws"},
             tracing=lambda_.Tracing.ACTIVE,
             log_group=logs.LogGroup(
-                self, "ApiLogs", retention=logs.RetentionDays.ONE_MONTH, removal_policy=RemovalPolicy.DESTROY
+                self, "ApiLogs", retention=retention, removal_policy=removal
             ),
         )
         #: The HTTP API. It answers CORS preflights itself; Go sets no CORS headers.
@@ -247,7 +283,7 @@ class ProofDevStack(Stack):
         )
         #: The API's access log group.
         self.access_logs = logs.LogGroup(
-            self, "ApiAccessLogs", retention=logs.RetentionDays.ONE_MONTH, removal_policy=RemovalPolicy.DESTROY
+            self, "ApiAccessLogs", retention=retention, removal_policy=removal
         )
         # Only HttpStage takes access_log_settings, so the $default stage is explicit.
         apigwv2.HttpStage(
@@ -262,7 +298,7 @@ class ProofDevStack(Stack):
         # other's files. The local web/dist/config.json (authMode dev) is in neither.
         # They share one handler Lambda, so they share its log group too.
         deploy_logs = logs.LogGroup(
-            self, "SpaDeployLogs", retention=logs.RetentionDays.ONE_MONTH, removal_policy=RemovalPolicy.DESTROY
+            self, "SpaDeployLogs", retention=retention, removal_policy=removal
         )
         assets = s3deploy.BucketDeployment(
             self,
@@ -300,8 +336,10 @@ class ProofDevStack(Stack):
         # A new index.html never points at hashed assets that are not uploaded yet.
         entry.node.add_dependency(assets)
 
-        CfnOutput(self, "SiteUrl", value=self.site_url)
-        CfnOutput(self, "ApiUrl", value=self.api.api_endpoint)
+        #: The ``SiteUrl`` output, read by the pipeline's smoke test.
+        self.site_url_output = CfnOutput(self, "SiteUrl", value=self.site_url)
+        #: The ``ApiUrl`` output, read by the pipeline's smoke test.
+        self.api_url_output = CfnOutput(self, "ApiUrl", value=self.api.api_endpoint)
         CfnOutput(self, "UserPoolId", value=self.user_pool.user_pool_id)
         CfnOutput(self, "UserPoolClientId", value=self.user_pool_client.user_pool_client_id)
         CfnOutput(self, "CognitoDomainUrl", value=self.user_pool_domain.base_url())
@@ -310,31 +348,33 @@ class ProofDevStack(Stack):
         CfnOutput(self, "ApiFunctionName", value=self.function.function_name)
 
 
-# After ProofDevStack: Python 3.12 and 3.13 evaluate the return annotation when the function is defined.
-def dev_stack(app: App, *, api_dir: str, web_dist: str) -> ProofDevStack:
-    """Add the dev Environment to ``app``, named from its ``projectName`` context value.
+# After EnvironmentStack: Python 3.12 and 3.13 evaluate the return annotation when the function is defined.
+def environment_stack(app: App, environment: str, *, api_dir: str, web_dist: str) -> EnvironmentStack:
+    """Add one Environment to ``app``, named from its ``projectName`` context value.
 
     Side Effects:
         Adds the stack to ``app``'s construct tree.
 
     Args:
         app: The CDK app. ``cdk.json`` or ``cdk -c projectName=...`` supplies ``projectName``.
+        environment: ``dev``, ``qa``, or ``prod``.
 
     Keyword Args:
         api_dir: The directory holding the API's ``Dockerfile``.
         web_dist: The directory holding the built SPA (``npm run build``).
 
     Raises:
-        ValueError: ``projectName`` is missing or invalid.
+        ValueError: ``projectName`` is missing or invalid, or ``environment`` is unknown.
 
     Returns:
-        The stack, named ``<projectName>-dev``, with the same Hosted UI prefix.
+        The stack, named ``<projectName>-<environment>``, with the same Hosted UI prefix.
     """
-    name = environment_name(app.node.try_get_context("projectName"), "dev")
-    return ProofDevStack(
+    name = environment_name(app.node.try_get_context("projectName"), environment)
+    return EnvironmentStack(
         app,
         name,
         env=Environment(account=os.environ.get("CDK_DEFAULT_ACCOUNT"), region=HOME_REGION),
+        environment=environment,
         api_dir=api_dir,
         web_dist=web_dist,
         cognito_domain_prefix=name,

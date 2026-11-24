@@ -2,39 +2,17 @@ import json
 from pathlib import Path
 
 import pytest
-from aws_cdk import App
 from aws_cdk.assertions import Capture, Match, Template
 
-from proof_dev import dev_stack, environment_name
-
-INFRA = Path(__file__).resolve().parent.parent
-
-
-def _app(tmp_path, **context):
-    """An App with the ``cdk.json`` context (the feature flags ``cdk deploy`` uses), updated by ``context``.
-
-    A ``None`` value removes that key, so ``projectName=None`` is an app with no project name.
-    """
-    merged = {**json.loads((INFRA / "cdk.json").read_text())["context"], **context}
-    return App(outdir=str(tmp_path / "cdk.out"), context={k: v for k, v in merged.items() if v is not None})
-
-
-@pytest.fixture
-def dist(tmp_path):
-    """A fake web/dist."""
-    dist = tmp_path / "dist"
-    (dist / "assets").mkdir(parents=True)
-    (dist / "index.html").write_text("<!doctype html><script src=/assets/app-abc123.js></script>")
-    (dist / "assets" / "app-abc123.js").write_text("console.log(1)")
-    (dist / "config.json").write_text('{"authMode": "dev", "apiBaseUrl": ""}')
-    return dist
+from conftest import INFRA, _app
+from environment import environment_name, environment_stack
 
 
 @pytest.fixture
 def built(tmp_path, dist):
-    """The dev stack as app.py builds it, its template, and the cloud assembly directory."""
+    """The dev stack, its template, and the cloud assembly directory."""
     app = _app(tmp_path)
-    stack = dev_stack(app, api_dir=str(INFRA.parent / "api"), web_dist=str(dist))
+    stack = environment_stack(app, "dev", api_dir=str(INFRA.parent / "api"), web_dist=str(dist))
     template = Template.from_stack(stack)
     return stack, template, Path(app.synth().directory)
 
@@ -252,13 +230,36 @@ def test_each_deployment_uploads_the_right_files(built):
     assert by_cache["public, max-age=31536000, immutable"] == {"assets/app-abc123.js"}
 
 
-def test_every_log_group_keeps_a_month_and_is_destroyed_with_the_stack(built):
-    _, t, _ = built
+@pytest.mark.parametrize("env, days, policy, protection", [
+    ("dev", 30, "Delete", "INACTIVE"), ("qa", 30, "Delete", "INACTIVE"), ("prod", 180, "Retain", "ACTIVE"),
+])
+def test_retention_and_removal_by_environment(tmp_path, dist, env, days, policy, protection):
+    t = Template.from_stack(environment_stack(_app(tmp_path), env, api_dir=str(INFRA.parent / "api"), web_dist=str(dist)))
     groups = t.find_resources("AWS::Logs::LogGroup")
     assert groups
     for name, group in groups.items():
-        assert group.get("DeletionPolicy") == "Delete", name
-        assert group["Properties"].get("RetentionInDays") == 30, name
+        assert group["Properties"]["RetentionInDays"] == days, name
+        assert group["DeletionPolicy"] == policy, name
+    t.has_resource("AWS::Cognito::UserPool", {"DeletionPolicy": policy, "UpdateReplacePolicy": policy,
+                                              "Properties": Match.object_like({"DeletionProtection": protection})})
+
+
+#: The logical ids swb-proof-dev was deployed with (synthesized 2026-11-23 at 787ad6c).
+DEPLOYED_DEV_IDS = {
+    "AWS::Cognito::UserPool": "Users0A0EEA89",
+    "AWS::Cognito::UserPoolDomain": "UsersDomainC6632324",
+    "AWS::Cognito::UserPoolClient": "UsersSpa85E8690B",
+    "AWS::S3::Bucket": "SiteE53D7754",
+    "AWS::CloudFront::Distribution": "Cdn9963B1AD",
+    "AWS::ApiGatewayV2::Api": "HttpApiF5A9A8A7",
+}
+
+
+def test_dev_keeps_its_hand_deployed_logical_ids(built):
+    stack, t, _ = built
+    assert stack.stack_name == "swb-proof-dev"
+    for type_, logical_id in DEPLOYED_DEV_IDS.items():
+        assert set(t.find_resources(type_)) == {logical_id}
 
 
 def test_checked_in_project_name_names_the_dev_stack(built):
@@ -269,7 +270,7 @@ def test_checked_in_project_name_names_the_dev_stack(built):
 
 
 def test_another_project_name_renames_stack_and_prefix(tmp_path, dist):
-    stack = dev_stack(_app(tmp_path, projectName="acme-shop"), api_dir=str(INFRA.parent / "api"), web_dist=str(dist))
+    stack = environment_stack(_app(tmp_path, projectName="acme-shop"), "dev", api_dir=str(INFRA.parent / "api"), web_dist=str(dist))
     assert stack.stack_name == "acme-shop-dev"
     Template.from_stack(stack).has_resource_properties("AWS::Cognito::UserPoolDomain", {"Domain": "acme-shop-dev"})
 
@@ -288,6 +289,11 @@ def test_valid_project_names(name):
     ],
 )
 def test_invalid_project_names_fail_at_synth(tmp_path, dist, name, rule):
-    # Through dev_stack, as app.py runs it; None means projectName is absent from the context.
+    # Through environment_stack, as app.py runs it; None means projectName is absent from the context.
     with pytest.raises(ValueError, match=rule):
-        dev_stack(_app(tmp_path, projectName=name), api_dir=str(INFRA.parent / "api"), web_dist=str(dist))
+        environment_stack(_app(tmp_path, projectName=name), "dev", api_dir=str(INFRA.parent / "api"), web_dist=str(dist))
+
+
+def test_unknown_environment_fails():
+    with pytest.raises(ValueError, match="staging"):
+        environment_name("swb-proof", "staging")

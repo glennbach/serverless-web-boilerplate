@@ -149,13 +149,24 @@ aws codepipeline list-pipeline-executions --region us-west-2 --pipeline-name swb
 
 Expected: branch `master`, and no run `InProgress`. If an earlier run is waiting at `PromoteToProd`, tell the user before going on, because the cutover run supersedes it. Note the newest execution ID.
 
-The later checks track runs **by execution ID**, never by `get-pipeline-state`. That command shows each stage's latest status from any run, so it can show an earlier run's success. Define these helpers in every shell that runs a check:
+Also confirm that local `master` holds the T011 commits, meaning branch `t011-deploy-from-build` was fast-forwarded into it:
+
+```bash
+git show master:infra/pipeline.py | grep -q 'BRANCH = "build"' && echo ok
+```
+
+Expected: `ok`. Otherwise stop. `build` would be created at a commit that still reads `master`, and Step 5 would switch nothing.
+
+The later checks track runs **by execution ID**, never by `get-pipeline-state`. That command shows each stage's latest status from any run, so it can show an earlier run's success. Define these helpers in every **bash** shell that runs a check (`$P` relies on bash word splitting):
 
 ```bash
 P="--region us-west-2 --pipeline-name swb-proof-pipeline"
 # Runs for one commit, newest first: id, status, trigger.
 runs() { aws codepipeline list-pipeline-executions $P --max-items 20 \
   --query "pipelineExecutionSummaries[?sourceRevisions[0].revisionId=='$1'].[pipelineExecutionId,status,trigger.triggerType]" --output text; }
+# The newest runs whatever their commit: id, status, trigger, revision (empty until Source succeeds).
+latest() { aws codepipeline list-pipeline-executions $P --max-items 3 \
+  --query "pipelineExecutionSummaries[].[pipelineExecutionId,status,trigger.triggerType,sourceRevisions[0].revisionId]" --output text; }
 # One run's actions: stage, action, status.
 actions() { aws codepipeline list-action-executions $P --filter pipelineExecutionId="$1" \
   --query "actionExecutionDetails[].[stageName,actionName,status]" --output text; }
@@ -178,7 +189,7 @@ The pipeline still watches `master`, so this starts nothing.
 
 - [ ] **Step 4: Confirm that creating `build` started nothing**
 
-Run the `list-pipeline-executions` command from Step 1.
+Wait 2 minutes, because a webhook-started run can take tens of seconds to appear. Then run `latest`.
 Expected: the newest execution ID is unchanged.
 
 - [ ] **Step 5: Push `master`** (needs go-ahead)
@@ -192,10 +203,10 @@ git push origin master
 `SHA=$(git rev-parse master)`.
 
 1. **Find the push run.** Poll `runs $SHA` until one execution appears, with a 5-minute timeout. Record its ID as `RUN1`.
-2. **Wait for its self-mutation.** Poll `actions $RUN1` until the `UpdatePipeline` stage's action is `Succeeded`, with a 30-minute timeout.
+2. **Wait for its self-mutation.** Poll every minute, with a 30-minute timeout, until either of these is true: `actions $RUN1` shows the `UpdatePipeline` stage's action `Succeeded`, or Step 1's `get-pipeline` shows branch `build`. The restart may stop `RUN1` before its action reports `Succeeded`, so the branch switch counts as done too.
 3. **Check the switch.** Run Step 1's `get-pipeline`. Expected: branch `build`, and `triggers` empty or limited to `build`.
-4. **Find the restarted run.** The pipeline restarts after it updates itself. Poll `runs $SHA` until a second, newer execution appears, with a 5-minute timeout. Record its ID as `RUN2`. `RUN1` should then show `Superseded` or `Stopped`. If no second run appears, stop and report; the user may start one with `aws codepipeline start-pipeline-execution --name swb-proof-pipeline --region us-west-2`.
-5. **Follow `RUN2`.** Poll `actions $RUN2` until `Source`, `Build`, `UpdatePipeline`, and every `Qa` action (deploys and `Smoke`) are `Succeeded`, with a 60-minute timeout. A failed `Source` in `RUN2` means `build` was not readable (Review Focus 1).
+4. **Find the restarted run.** The pipeline restarts after it updates itself, and the new run has **no source revision until its Source action succeeds**. So find it with `latest`, not `runs`. Poll `latest` until the newest execution's ID is not `RUN1`, with a 5-minute timeout. Its trigger should be `CloudFormationStackUpdate`. Record its ID as `RUN2`. `RUN1` should then show `Superseded` or `Stopped`. If no new run appears, stop and report; the user may start one with `aws codepipeline start-pipeline-execution --name swb-proof-pipeline --region us-west-2`.
+5. **Follow `RUN2`.** Poll `actions $RUN2` until `Source`, `Build`, `UpdatePipeline`, `Assets`, and every `Qa` action (deploys and `Smoke`) are `Succeeded`, with a 60-minute timeout. If `Source` fails in `RUN2`, `build` was not readable (Review Focus 1): stop and report its error. Once `Source` succeeds, confirm with `latest` that `RUN2`'s revision equals `$SHA`.
 
 - [ ] **Step 7: Promote `RUN2`**
 
@@ -218,8 +229,8 @@ git add TODO.md && git commit -m "chore: T011 to review"
 
 - [ ] **Step 3: Confirm no run started**
 
-Wait at least 5 minutes. With `SHA=$(git rev-parse master)`, run `runs $SHA`, and run Task 3, Step 1's `list-pipeline-executions`.
-Expected: `runs $SHA` prints nothing, and the newest execution is still `RUN2`. If a new run started, stop: Review Focus 4 has happened.
+Wait at least 5 minutes, then run `latest`.
+Expected: the newest execution is still `RUN2`. If a new run started, stop: Review Focus 4 has happened.
 
 - [ ] **Step 4: Deploy it** (needs go-ahead)
 
@@ -227,7 +238,7 @@ Expected: `runs $SHA` prints nothing, and the newest execution is still `RUN2`. 
 
 - [ ] **Step 5: Confirm a run started from `build`**
 
-Poll `runs $SHA` until one execution appears, with a 5-minute timeout. Record its ID as `RUN3`. It is the proof that a push to `build` starts a run. This commit doesn't change the pipeline, so there is no restart. Follow `actions $RUN3` through `Qa` and promote it, as in Task 3, Steps 6.5 and 7, with the same polling rule and timeouts.
+With `SHA=$(git rev-parse master)`, poll `latest` until the newest execution's ID is not `RUN2`, with a 5-minute timeout. Record its ID as `RUN3`. Once its `Source` succeeds, confirm that its revision equals `$SHA`. It is the proof that a push to `build` starts a run. This commit doesn't change the pipeline, so there is no restart. Follow `actions $RUN3` through `Qa` and promote it, as in Task 3, Steps 6.5 and 7, with the same polling rule and timeouts.
 
 - [ ] **Step 6: Record and complete**
 

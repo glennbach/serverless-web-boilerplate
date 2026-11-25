@@ -7,18 +7,19 @@
 
 ## P2 — Backlog
 
-- [ ] **T011** Trigger the pipeline from the build branch instead of master #chore #infra
-  - Acceptance: infra/pipeline.py sets BRANCH to build, and test_pipeline.py asserts the source BranchName is build. A build branch exists on GitHub, and the pipeline's source action reads from it. A push to master alone starts no pipeline run, and a push to build does. ADR 0001 Decision 3, the pipeline.py docstring, and the README say that a push to build deploys, and the README shows how to ship: git push origin master:build.
-  - Context: Decided 2026-11-24 with the user: deploy only on purpose, not on every push to master. Previous branch change: commit 0bc7b64 (main to master) touched README.md, ADR 0001, infra/pipeline.py, and infra/tests/test_pipeline.py. Cutover order matters: the running pipeline watches master and changes its own source only when it updates itself. Create build on GitHub at the commit that sets BRANCH to build, then push that commit to master. The master run updates the pipeline to read from build, and from then on only pushes to build start it. If build does not exist when the pipeline switches, the source stage fails. T010 also edits pipeline.py, its tests, ADR 0001, and the README, so do the two tasks one after the other. Plan: docs/plans/2026-11-25-deploy-from-build-branch.md (2026-11-25). ADR: amends ADR 0001; no new ADR. Glossary: CONTEXT.md adds Deploy and Promote.
-  - Related: T010
-  - Review: 2026-11-25
-
 - [ ] **T012** Decide whether QA and prod use the CloudFront flat-rate Free plan #chore #infra
   - Acceptance: Either (a) README one-time setup step 6, ADR 0001 open question 4, and test_distribution_is_flat_rate_eligible are removed, and ADR 0001 records pay-as-you-go as the decision; or (b) both distributions are subscribed, aws pricing-plan-manager list-subscriptions --region us-east-1 lists them ACTIVE, and ADR 0001's cost table says about $0 at idle.
   - Context: Found 2026-11-24 while planning T010: list-subscriptions returns no subscriptions, although platform go-live Step 9 is ticked. The user does not intend to subscribe. T010 only corrects ADR 0001's cost table to the actual pay-as-you-go cost (about $18/month idle for two web ACLs through 2027-01-31: $5 per web ACL plus $1 for each of its 4 rules; about $14.60 from 2027-02-01, when AWS WAF bills $0.01 per hour per protected resource; https://aws.amazon.com/waf/pricing/, checked 2026-11-24); this task decides whether to drop the Free plan setup or keep eligibility as a free option.
   - Related: T010
 
 ## Done (recent)
+
+- [x] **T011** Trigger the pipeline from the build branch instead of master #chore #infra
+  - Acceptance: infra/pipeline.py sets BRANCH to build, and test_pipeline.py asserts the source BranchName is build. A build branch exists on GitHub, and the pipeline's source action reads from it. A push to master alone starts no pipeline run, and a push to build does. ADR 0001 Decision 3, the pipeline.py docstring, and the README say that a push to build deploys, and the README shows how to ship: git push origin master:build.
+  - Context: Decided 2026-11-24 with the user: deploy only on purpose, not on every push to master. Previous branch change: commit 0bc7b64 (main to master) touched README.md, ADR 0001, infra/pipeline.py, and infra/tests/test_pipeline.py. Cutover order matters: the running pipeline watches master and changes its own source only when it updates itself. Create build on GitHub at the commit that sets BRANCH to build, then push that commit to master. The master run updates the pipeline to read from build, and from then on only pushes to build start it. If build does not exist when the pipeline switches, the source stage fails. T010 also edits pipeline.py, its tests, ADR 0001, and the README, so do the two tasks one after the other. Plan: docs/plans/2026-11-25-deploy-from-build-branch.md (2026-11-25). ADR: amends ADR 0001; no new ADR. Glossary: CONTEXT.md adds Deploy and Promote. Cutover 2026-11-25: build created at 2cb629e; push of master started run 6edb79b1, which switched the source to build with an explicit trigger (push, branches include build) and was superseded by run 256fa45e (QA and prod succeeded). The live pipeline had an AWS-derived trigger for master, so pipeline.py now declares the trigger. Verified: pushing 052ab70 to master alone at 20:56:56Z started no run in 5 minutes; pushing it to build at 21:02:17Z started run dd36051f (WebhookV2) 13 seconds later.
+  - Related: T010
+  - Outcome: completed
+  - Closed: 2026-11-25
 
 - [x] **T010** Remove the dev environment from the pipeline #chore #infra
   - Acceptance: A push to master deploys QA, then prod after manual approval, with no Dev stage. test_pipeline.py asserts the stages are Qa then Prod. ADR 0001 Decisions 3 and 9 are amended, and the README matches. swb-proof-dev (us-west-2) and swb-proof-dev-edge (us-east-1) are deleted, and describe-stacks for each reports that the stack does not exist.

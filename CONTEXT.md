@@ -19,3 +19,11 @@ _Avoid_: Stage, stack, local environment, dev environment
 **Current user**:
 The person the proof shows as signed in. The API tells the interface who this is.
 _Avoid_: Principal, account, claims
+
+**Deploy**:
+To put a commit from `master` onto `build`. The pipeline tests the commit and puts it in QA. A push to `master` alone deploys nothing.
+_Avoid_: Ship, release, push
+
+**Promote**:
+To approve a deployed commit for prod. The commit goes to prod only after someone approves it.
+_Avoid_: Ship, release

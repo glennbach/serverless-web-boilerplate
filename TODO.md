@@ -1,5 +1,5 @@
 # TODO — serverless-web-boilerplate
-<!-- todo-format: 2; next-id: 10 -->
+<!-- todo-format: 2; next-id: 12 -->
 
 ## P0 — Critical / Blocking
 
@@ -7,13 +7,24 @@
 
 ## P2 — Backlog
 
-- [ ] **T008** Build the full platform #feature #infra
+- [ ] **T010** Remove the dev environment from the pipeline #chore #infra
+  - Acceptance: A push to master deploys QA, then prod after manual approval, with no Dev stage. test_pipeline.py asserts the stages are Qa then Prod. ADR 0001 Decisions 3 and 9 are amended, and the README matches. swb-proof-dev (us-west-2) and swb-proof-dev-edge (us-east-1) are deleted, and describe-stacks for each reports that the stack does not exist.
+  - Context: Decided 2026-11-24 with the user: for one developer, dev duplicates QA. Both deploy the same assets one after the other, with the same smoke step and no gate between them. The dev stacks are deleted, not kept as a sandbox. Code to change: infra/pipeline.py, infra/environment.py (ENVIRONMENTS, log retention), infra/tests/test_pipeline.py, infra/tests/test_environment.py. Removing the stage does not delete its stacks, because CloudFormation keeps state per stack and nothing tracks the app's list of stacks. Delete steps, in order: (1) Push the pipeline change and let the pipeline update itself first; otherwise the next run recreates dev. (2) If the dev distribution is subscribed to the CloudFront flat-rate Free plan, cancel the subscription, because a subscribed distribution cannot be deleted. (3) aws cloudformation delete-stack --region us-west-2 --stack-name swb-proof-dev, then aws cloudformation wait stack-delete-complete --region us-west-2 --stack-name swb-proof-dev. (4) aws cloudformation delete-stack --region us-east-1 --stack-name swb-proof-dev-edge; WAF refuses to delete a web ACL while a distribution still uses it, so step 3 must finish first. Dev's user pool and log groups delete with the stack (RemovalPolicy DESTROY), so its users are lost.
+  - Related: T008
+
+- [ ] **T011** Trigger the pipeline from the build branch instead of master #chore #infra
+  - Acceptance: infra/pipeline.py sets BRANCH to build, and test_pipeline.py asserts the source BranchName is build. A build branch exists on GitHub, and the pipeline's source action reads from it. A push to master alone starts no pipeline run, and a push to build does. ADR 0001 Decision 3, the pipeline.py docstring, and the README say that a push to build deploys, and the README shows how to ship: git push origin master:build.
+  - Context: Decided 2026-11-24 with the user: deploy only on purpose, not on every push to master. Previous branch change: commit 0bc7b64 (main to master) touched README.md, ADR 0001, infra/pipeline.py, and infra/tests/test_pipeline.py. Cutover order matters: the running pipeline watches master and changes its own source only when it updates itself. Create build on GitHub at the commit that sets BRANCH to build, then push that commit to master. The master run updates the pipeline to read from build, and from then on only pushes to build start it. If build does not exist when the pipeline switches, the source stage fails. T010 also edits pipeline.py, its tests, ADR 0001, and the README, so do the two tasks one after the other.
+  - Related: T010
+
+## Done (recent)
+
+- [x] **T008** Build the full platform #feature #infra
   - Acceptance: A push to main deploys dev and then QA through CodePipeline. Prod deploys after manual approval. Each environment is served on its *.cloudfront.net URL behind its own WAF web ACL, and sign-in works in each. Each distribution stays eligible for the CloudFront flat-rate Free plan and is subscribed where the account allows (nice-to-have: a refusal is recorded here, and that environment runs pay-as-you-go).
   - Context: Follows the T007 plan: docs/plans/2026-11-23-platform.md (Tasks 1-3 build infra/, Task 4 is the go-live run by hand). Tasks 1-3 implemented on branch feat/platform (8726384..ef20b2d), 61 infra tests pass, final review fixes applied. Remaining: Task 4 go-live (GitHub repo + connection, cdk.json repository/connectionArn, bootstrap us-west-2 and us-east-1, cdk deploy swb-proof-pipeline, approve prod, optional Free plan subscriptions, users, sign-in in each).
   - Blocked by: T007,T009
-  - Claimed: claude | 2026-11-23 | feat/platform
-
-## Done (recent)
+  - Outcome: completed
+  - Closed: 2026-11-24
 
 - [x] **T007** Plan the full platform: pipeline, QA, prod, and WAF #docs #infra
   - Acceptance: Plan written under docs/plans/ and linked here. Covers CodePipeline and CodeBuild (one image and one SPA bundle per commit, per-environment config.json, manual approval before prod), QA and prod stacks, and WAF. Every environment uses its *.cloudfront.net URL, with no hosted zone, certificate, or custom domain (ADR 0001 Decision 8 amended). Settles ADR 0001 open questions 2-4: stack layout, log retention, and the CloudFront flat-rate Free plan. The user has vetted it.

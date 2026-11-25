@@ -23,15 +23,16 @@ def _stages(stack):
     return pipeline["Properties"]["Stages"]
 
 
-def test_dev_then_qa_then_approved_prod(pipeline):
+def test_qa_then_approved_prod(pipeline):
     stages = _stages(pipeline)
-    assert [s["Name"] for s in stages][-3:] == ["Dev", "Qa", "Prod"]
+    names = [s["Name"] for s in stages]
+    assert names[-2:] == ["Qa", "Prod"] and "Dev" not in names
     approvals = {s["Name"]: [a for a in s["Actions"] if a["ActionTypeId"]["Category"] == "Approval"] for s in stages}
-    assert approvals["Dev"] == approvals["Qa"] == [] and len(approvals["Prod"]) == 1
+    assert approvals["Qa"] == [] and len(approvals["Prod"]) == 1
     prod = next(s for s in stages if s["Name"] == "Prod")
     deploys = [a["RunOrder"] for a in prod["Actions"] if a["ActionTypeId"]["Category"] == "Deploy"]
     assert deploys and approvals["Prod"][0]["RunOrder"] < min(deploys)
-    for s in stages[-3:]:
+    for s in stages[-2:]:
         assert any(a["Name"].startswith("Smoke") for a in s["Actions"])
 
 
@@ -69,7 +70,7 @@ def test_every_environment_deploys_the_same_assets(pipeline):
 def test_names(pipeline):
     assert pipeline.stack_name == "swb-proof-pipeline"
     assert {e: s.environment_stack.stack_name for e, s in pipeline.stages.items()} == {
-        "dev": "swb-proof-dev", "qa": "swb-proof-qa", "prod": "swb-proof-prod"}
+        "qa": "swb-proof-qa", "prod": "swb-proof-prod"}
 
 
 @pytest.mark.parametrize("key, value", [

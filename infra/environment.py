@@ -1,4 +1,4 @@
-"""One Environment of the Project (dev, QA, or prod): its site, sign-in, and API in the home region.
+"""One Environment of the Project (QA or prod): its site, sign-in, and API in the home region.
 
 See docs/plans/2026-11-23-platform.md, docs/plans/2026-11-22-dev-environment.md, and ADRs 0001-0003.
 """
@@ -37,11 +37,10 @@ MAX_PROJECT_NAME = 58
 RESERVED_WORDS = ("aws", "amazon", "cognito")
 
 #: The Environments of a Project, in promotion order.
-ENVIRONMENTS = ("dev", "qa", "prod")
+ENVIRONMENTS = ("qa", "prod")
 
 #: How long each Environment keeps its CloudWatch logs (ADR 0001, open question 3).
 LOG_RETENTION = {
-    "dev": logs.RetentionDays.ONE_MONTH,
     "qa": logs.RetentionDays.ONE_MONTH,
     "prod": logs.RetentionDays.SIX_MONTHS,
 }
@@ -83,7 +82,7 @@ def environment_name(project_name: object, environment: str) -> str:
 
     Args:
         project_name: The ``projectName`` context value, unchecked.
-        environment: ``dev``, ``qa``, or ``prod``.
+        environment: ``qa`` or ``prod``.
 
     Raises:
         ValueError: ``project_name`` is invalid, or ``environment`` is not one of ``ENVIRONMENTS``.
@@ -156,14 +155,14 @@ class EnvironmentStack(Stack):
 
     The SPA is served from a private S3 bucket through CloudFront on its
     ``*.cloudfront.net`` URL. Prod keeps its User Pool and log groups if the
-    stack is deleted; dev and QA delete them with the stack.
+    stack is deleted; QA deletes them with the stack.
 
     Args:
         scope: The parent construct.
         construct_id: The construct id, and the stack name unless ``stack_name`` is given.
 
     Keyword Args:
-        environment: ``dev``, ``qa``, or ``prod``.
+        environment: ``qa`` or ``prod``.
         api_dir: The directory holding the API's ``Dockerfile``.
         web_dist: The directory holding the built SPA (``npm run build``).
         cognito_domain_prefix: The Hosted UI prefix domain.
@@ -377,11 +376,11 @@ class EnvironmentStage(Stage):
 
     Args:
         scope: The parent construct: the pipeline stack, or an ``App`` in tests.
-        construct_id: The stage id, for example ``Dev``; also the pipeline stage's name.
+        construct_id: The stage id, for example ``Qa``; also the pipeline stage's name.
 
     Keyword Args:
         project_name: The ``projectName`` context value, unchecked.
-        environment: ``dev``, ``qa``, or ``prod``.
+        environment: ``qa`` or ``prod``.
         account: The AWS account both stacks deploy to, or ``None`` for the CLI's default.
         api_dir: The directory holding the API's ``Dockerfile``.
         web_dist: The directory holding the built SPA (``npm run build``).
@@ -403,7 +402,7 @@ class EnvironmentStage(Stage):
     ) -> None:
         name = environment_name(project_name, environment)
         super().__init__(scope, construct_id)
-        #: ``dev``, ``qa``, or ``prod``.
+        #: ``qa`` or ``prod``.
         self.environment = environment
         #: The web ACL stack, ``<name>-edge``, in ``us-east-1``.
         self.edge_stack = EdgeStack(

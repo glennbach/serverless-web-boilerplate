@@ -10,7 +10,7 @@ from edge import MANAGED_RULE_GROUPS
 from environment import ENVIRONMENTS, EnvironmentStage, environment_name
 
 
-def _stage(tmp_path, dist, environment="dev", **context):
+def _stage(tmp_path, dist, environment="qa", **context):
     """One Environment's stage, named from the ``cdk.json`` context updated by ``context``."""
     app = _app(tmp_path, **context)
     return EnvironmentStage(
@@ -21,7 +21,7 @@ def _stage(tmp_path, dist, environment="dev", **context):
 
 @pytest.fixture
 def built(tmp_path, dist):
-    """The dev stack, its template, and the app's cloud assembly directory."""
+    """The QA stack, its template, and the app's cloud assembly directory."""
     stage = _stage(tmp_path, dist)
     stack = stage.environment_stack
     template = Template.from_stack(stack)
@@ -77,7 +77,7 @@ def test_pool_schema(built):
 
 def test_prefix_domain_classic_hosted_ui(built):
     _, t, _ = built
-    t.has_resource_properties("AWS::Cognito::UserPoolDomain", {"Domain": "swb-proof-dev", "ManagedLoginVersion": 1})
+    t.has_resource_properties("AWS::Cognito::UserPoolDomain", {"Domain": "swb-proof-qa", "ManagedLoginVersion": 1})
 
 
 def test_client_is_public_pkce_with_site_callback(built):
@@ -204,7 +204,7 @@ def test_config_json_is_built_from_stack_values(built):
     }
 
 
-def test_dev_config_is_never_uploaded(built):
+def test_local_config_is_never_uploaded(built):
     _, _, outdir = built
     staged = [p.read_text() for p in outdir.glob("asset.*/config.json")]
     assert len(staged) == 1 and '"cognito"' in staged[0] and '"dev"' not in staged[0]
@@ -243,7 +243,7 @@ def test_each_deployment_uploads_the_right_files(built):
 
 
 @pytest.mark.parametrize("env, days, policy, protection", [
-    ("dev", 30, "Delete", "INACTIVE"), ("qa", 30, "Delete", "INACTIVE"), ("prod", 180, "Retain", "ACTIVE"),
+    ("qa", 30, "Delete", "INACTIVE"), ("prod", 180, "Retain", "ACTIVE"),
 ])
 def test_retention_and_removal_by_environment(tmp_path, dist, env, days, policy, protection):
     t = Template.from_stack(_stage(tmp_path, dist, env).environment_stack)
@@ -256,8 +256,9 @@ def test_retention_and_removal_by_environment(tmp_path, dist, env, days, policy,
                                               "Properties": Match.object_like({"DeletionProtection": protection})})
 
 
-#: The logical ids swb-proof-dev was deployed with (synthesized 2026-11-23 at 787ad6c).
-DEPLOYED_DEV_IDS = {
+#: The logical ids every Environment was deployed with (pinned from swb-proof-dev at 787ad6c;
+#: swb-proof-qa and swb-proof-prod confirmed 2026-11-24).
+DEPLOYED_IDS = {
     "AWS::Cognito::UserPool": "Users0A0EEA89",
     "AWS::Cognito::UserPoolDomain": "UsersDomainC6632324",
     "AWS::Cognito::UserPoolClient": "UsersSpa85E8690B",
@@ -267,24 +268,23 @@ DEPLOYED_DEV_IDS = {
 }
 
 
-def test_dev_keeps_its_hand_deployed_logical_ids(built):
-    stack, t, _ = built
-    assert stack.stack_name == "swb-proof-dev"
-    for type_, logical_id in DEPLOYED_DEV_IDS.items():
+def test_deployed_logical_ids_are_unchanged(stage):
+    t = Template.from_stack(stage.environment_stack)
+    for type_, logical_id in DEPLOYED_IDS.items():
         assert set(t.find_resources(type_)) == {logical_id}
 
 
-def test_checked_in_project_name_names_the_dev_stack(built):
+def test_checked_in_project_name_names_the_qa_stack(built):
     stack, _, _ = built
     context = json.loads((INFRA / "cdk.json").read_text())["context"]
     assert context["projectName"] == "swb-proof" and "cognitoDomainPrefix" not in context
-    assert stack.stack_name == "swb-proof-dev"
+    assert stack.stack_name == "swb-proof-qa"
 
 
 def test_another_project_name_renames_stack_and_prefix(tmp_path, dist):
     stack = _stage(tmp_path, dist, projectName="acme-shop").environment_stack
-    assert stack.stack_name == "acme-shop-dev"
-    Template.from_stack(stack).has_resource_properties("AWS::Cognito::UserPoolDomain", {"Domain": "acme-shop-dev"})
+    assert stack.stack_name == "acme-shop-qa"
+    Template.from_stack(stack).has_resource_properties("AWS::Cognito::UserPoolDomain", {"Domain": "acme-shop-qa"})
 
 
 @pytest.mark.parametrize("name", ["a", "swb-proof", "a1-b2", "a" * 58])
@@ -306,9 +306,10 @@ def test_invalid_project_names_fail_at_synth(tmp_path, dist, name, rule):
         _stage(tmp_path, dist, projectName=name)
 
 
-def test_unknown_environment_fails():
-    with pytest.raises(ValueError, match="staging"):
-        environment_name("swb-proof", "staging")
+@pytest.mark.parametrize("env", ["staging", "dev"])
+def test_unknown_environment_fails(env):
+    with pytest.raises(ValueError, match=env):
+        environment_name("swb-proof", env)
 
 
 def test_web_acl_fits_the_free_plan(stage):

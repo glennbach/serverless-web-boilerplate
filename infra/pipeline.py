@@ -1,4 +1,4 @@
-"""The Project's delivery pipeline: a push to ``master`` deploys dev, then QA, then prod after approval.
+"""The Project's delivery pipeline: a push to ``master`` deploys QA, then prod after approval.
 
 See docs/plans/2026-11-23-platform.md and ADR 0001, Decisions 3 and 4.
 """

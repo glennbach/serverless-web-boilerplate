@@ -122,7 +122,7 @@ TypeScript cannot see what Go sends, so the contract is checked on both sides:
 
 On AWS, the HTTP API handles CORS. It allows the environment's SPA origin, method `GET`, and header `Authorization`, and it answers preflight requests itself. Go sets no CORS headers in either environment. The Vite dev server proxies `/api` to the Go process, so the browser's local calls are same-origin and do not depend on CORS.
 
-**Rationale.** ADR 0001 promotes one commit through dev, QA, and prod. A per-environment rebuild would mean QA never ran the prod bundle. One fetch path keeps local and deployed startup the same.
+**Rationale.** ADR 0001 promotes one commit through QA and prod. A per-environment rebuild would mean QA never ran the prod bundle. One fetch path keeps local and deployed startup the same.
 
 **Alternatives considered.**
 - *Injecting endpoints at `npm run build`:* One bundle per environment. Rejected for the reason above.

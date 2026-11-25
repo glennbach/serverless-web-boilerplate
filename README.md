@@ -30,7 +30,7 @@ A copy of this repository deploys as its own project, with its own stacks, User 
 3. **Set `repository` (`owner/name`) and `connectionArn` in `infra/cdk.json`**, from the GitHub connection described under [One-time setup](#one-time-setup).
 4. **Follow [One-time setup](#one-time-setup):** bootstrap `us-west-2` and `us-east-1`, deploy the pipeline once, and create users.
 
-An AWS account holds at most three CloudFront flat-rate Free plans, and one project's three environments use them all. A second project in the same account runs pay-as-you-go, which costs about $8 per month per environment for WAF.
+An AWS account holds at most three CloudFront flat-rate Free plans, and one project's two environments use two of them, leaving one. A second project in the same account runs pay-as-you-go, which costs about $9 per month per environment for WAF (about $7.30 from 2027-02-01).
 
 ---
 
@@ -127,11 +127,11 @@ The real Hosted UI and token endpoint, the API Gateway JWT authorizer and CORS, 
 
 ---
 
-## Phase 2b: the pipeline and three environments
+## Phase 2b: the pipeline and two environments
 
-`infra/` is a CDK pipeline, `swb-proof-pipeline` (`<projectName>-pipeline`), in `us-west-2`. A push to `master` on GitHub runs it. It tests the Go API, the SPA, and the CDK. It builds the SPA and the API image once, then deploys them to dev, then QA, then prod after a manual approval. It updates itself first, so a change to the pipeline ships the same way.
+`infra/` is a CDK pipeline, `swb-proof-pipeline` (`<projectName>-pipeline`), in `us-west-2`. A push to `master` on GitHub runs it. It tests the Go API, the SPA, and the CDK. It builds the SPA and the API image once, then deploys them to QA, then prod after a manual approval. It updates itself first, so a change to the pipeline ships the same way.
 
-Each environment (`dev`, `qa`, `prod`) is two stacks ([ADR 0003](docs/adr/0003-deployed-names-from-project-name.md)):
+Each environment (`qa`, `prod`) is two stacks ([ADR 0003](docs/adr/0003-deployed-names-from-project-name.md)):
 
 - `<projectName>-<env>-edge`, in `us-east-1`, holds the environment's WAF web ACL: a rate limit of 1,000 requests per 5 minutes per IP, plus three AWS managed rule groups.
 - `<projectName>-<env>`, in `us-west-2`, holds:
@@ -141,9 +141,9 @@ Each environment (`dev`, `qa`, `prod`) is two stacks ([ADR 0003](docs/adr/0003-d
   - an HTTP API with a JWT authorizer, CORS, and access logs
   - the environment's own `config.json`
 
-Dev and QA keep logs for a month and delete everything with their stacks. Prod keeps logs for six months, and its User Pool and log groups survive the deletion of its stack, with deletion protection on the pool. After each environment deploys, a smoke step checks that its `config.json` is the deployed one and that `/api/me` without a token returns 401.
+QA keeps logs for a month and deletes everything with its stack. Prod keeps logs for six months, and its User Pool and log groups survive the deletion of its stack, with deletion protection on the pool. After each environment deploys, a smoke step checks that its `config.json` is the deployed one and that `/api/me` without a token returns 401.
 
-See the [plan](docs/plans/2026-11-23-platform.md). Phase 2a's hand-deployed dev stack, `swb-proof-dev`, is the pipeline's dev stack. The pipeline updates it in place, and its users stay.
+See the [plan](docs/plans/2026-11-23-platform.md). Phase 2a's hand-deployed dev stack became the pipeline's dev stack. T010 removed dev on 2026-11-24, so QA is now the first environment ([plan](docs/plans/2026-11-24-remove-dev-environment.md)).
 
 ### Prerequisites
 
@@ -160,8 +160,8 @@ cd infra && uv run pytest -q
 
 | Suite | What it proves |
 |---|---|
-| `infra/tests/test_environment.py` | One environment's stacks, synthesized for dev, QA, and prod. The pool schema, the client's exact callback and logout URLs, CORS for exactly the site origin, `GET /api/me` behind the JWT authorizer, the arm64 image, the JSON access logs, the SPA uploads, their cache headers, and that the local `config.json` is never uploaded. Log retention and what prod keeps. Dev's logical ids match the deployed stack. The web ACL fits the flat-rate Free plan, and the distribution stays eligible for it. Names come from `projectName`, and invalid names fail at synth. |
-| `infra/tests/test_pipeline.py` | Dev, then QA, then prod after approval, with a smoke step after each. The source is `master` on GitHub. The synth step runs every test suite. Every environment deploys the same image and SPA files. Missing pipeline settings fail at synth. |
+| `infra/tests/test_environment.py` | One environment's stacks, synthesized for QA and prod. The pool schema, the client's exact callback and logout URLs, CORS for exactly the site origin, `GET /api/me` behind the JWT authorizer, the arm64 image, the JSON access logs, the SPA uploads, their cache headers, and that the local `config.json` is never uploaded. Log retention and what prod keeps. The logical ids of the deployed QA and prod stacks don't change. The web ACL fits the flat-rate Free plan, and the distribution stays eligible for it. Names come from `projectName`, and invalid names fail at synth. |
+| `infra/tests/test_pipeline.py` | QA, then prod after approval, with a smoke step after each; there is no Dev stage. The source is `master` on GitHub. The synth step runs every test suite. Every environment deploys the same image and SPA files. Missing pipeline settings fail at synth. |
 
 ### One-time setup
 
@@ -178,10 +178,10 @@ cd infra && uv run pytest -q
    ```
    CDK may also create `swb-proof-pipeline-support-us-east-1`, which holds pipeline artifacts for the `us-east-1` stacks.
 5. **Approve prod** when the first run reaches `PromoteToProd`.
-6. **Subscribe each distribution to the flat-rate Free plan (optional).** In the CloudFront console, choose the Free plan for each of the three distributions, and keep the attached web ACL. If the account cannot subscribe, the environments run pay-as-you-go.
+6. **Subscribe each distribution to the flat-rate Free plan (optional).** In the CloudFront console, choose the Free plan for each of the two distributions, and keep the attached web ACL. If the account cannot subscribe, the environments run pay-as-you-go.
 7. **Create users.** Self sign-up is off. List each environment's site URL and user pool ID; drop the `[?...]` filter to see every output:
    ```bash
-   for env in dev qa prod; do
+   for env in qa prod; do
      echo "== $env"
      aws cloudformation describe-stacks --region us-west-2 --stack-name "swb-proof-$env" \
        --query "Stacks[0].Outputs[?OutputKey=='SiteUrl' || OutputKey=='UserPoolId'].[OutputKey,OutputValue]" \
@@ -190,7 +190,7 @@ cd infra && uv run pytest -q
    ```
    For each environment, set `POOL` to its `UserPoolId` and create a user, and Cognito emails a temporary password:
    ```bash
-   POOL=$(aws cloudformation describe-stacks --region us-west-2 --stack-name swb-proof-dev \
+   POOL=$(aws cloudformation describe-stacks --region us-west-2 --stack-name swb-proof-qa \
      --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" --output text)
    aws cognito-idp admin-create-user --region us-west-2 --user-pool-id "$POOL" \
      --username "$EMAIL" --user-attributes Name=email,Value="$EMAIL" Name=email_verified,Value=true \
@@ -198,27 +198,27 @@ cd infra && uv run pytest -q
    ```
    Open the stack's `SiteUrl`, sign in, and set a new password. The page shows the email.
 
-To inspect one stack, select it by construct path, for example `cdk diff swb-proof-pipeline/Dev/Site` (`cdk ls` lists them all).
+To inspect one stack, select it by construct path, for example `cdk diff swb-proof-pipeline/Qa/Site` (`cdk ls` lists them all).
 
 ### Releasing
 
-Push to `master`. Dev and QA deploy on their own. To ship to prod, approve `PromoteToProd` in the CodePipeline console. An approval expires after 7 days, and the run must then be started again.
+Push to `master`. QA deploys on its own. To ship to prod, approve `PromoteToProd` in the CodePipeline console. An approval expires after 7 days, and the run must then be started again.
 
 ### Tear down
 
 Do these in order:
 
 1. Cancel each distribution's Free plan subscription, if it has one. A subscribed distribution cannot be deleted.
-2. Delete `swb-proof-prod`, `swb-proof-qa`, and `swb-proof-dev`, for example with `aws cloudformation delete-stack --region us-west-2 --stack-name swb-proof-qa`. Then delete the three `-edge` stacks in `us-east-1`. WAF refuses to delete a web ACL while a distribution still uses it.
+2. Delete `swb-proof-prod` and `swb-proof-qa`, for example with `aws cloudformation delete-stack --region us-west-2 --stack-name swb-proof-qa`. Then delete the two `-edge` stacks in `us-east-1`. WAF refuses to delete a web ACL while a distribution still uses it.
 3. Run `cdk destroy swb-proof-pipeline`. `cdk destroy` synthesizes the app first, so `web/dist` must exist. Run `npm run build` in `web/` first.
 4. Delete `swb-proof-pipeline-support-us-east-1` in `us-east-1`, if it exists. `cdk destroy swb-proof-pipeline` does not remove it.
+5. Delete the leftover `/aws/lambda/swb-proof-<env>-…` log groups in `us-west-2` and `us-east-1`. Custom-resource Lambdas created them, CloudFormation never managed them, and they never expire.
 
 Some things remain:
 
 - Prod's User Pool and log groups. To delete them, turn off the pool's deletion protection, then delete the pool and the log groups by hand.
 - The pipeline's artifact bucket in `us-west-2`, and the support stack's replication bucket in `us-east-1`. Both are retained. Empty and delete them by hand.
 - The `CDKToolkit` bootstrap stacks, with the image and file assets they hold.
-- Small log groups that CDK's custom-resource handlers create at runtime, which no stack owns.
 
 ### Adding a custom domain later
 

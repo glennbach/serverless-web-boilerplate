@@ -6,6 +6,7 @@
 - **Revised:** 2026-11-21, after review. API Gateway answers CORS. X-Ray traces Lambda only. Idle cost has a fixed WAF and Route 53 baseline. The database decision no longer cites an Aurora capacity floor.
 - **Amended:** 2026-11-22. Added Decision 10: the home region is `us-west-2`.
 - **Amended:** 2026-11-23 (T007). The Proof has no domain name, so every environment uses its own `*.cloudfront.net` URL and there is no hosted zone or ACM certificate (Decision 8). Settled open questions 2–4: stack layout, log retention, and the CloudFront flat-rate Free plan. Plan: [platform plan](../plans/2026-11-23-platform.md).
+- **Amended:** 2026-11-24 (T010). Dev is removed: a push to master deploys QA, then prod after approval. For one developer, dev duplicated QA. Both deployed the same assets in turn, with the same smoke step and no gate between them. Plan: [remove dev](../plans/2026-11-24-remove-dev-environment.md).
 - **Author:** Glenn Bach
 - **Scope:** AWS platform for the proof, a Go API and a React SPA with no product domain. The application itself is [ADR 0002](0002-proof-application.md).
 
@@ -19,7 +20,7 @@ The deployment goals are:
 
 - Low cost when idle. Pay per use where possible.
 - Little infrastructure to maintain. Prefer managed and serverless services.
-- Clear isolation between dev, QA, and prod, including user identities.
+- Clear isolation between QA and prod, including user identities.
 - Repeatable, reviewable infrastructure defined in code.
 - Consistency with existing Caltech IT practice for secrets and logging.
 
@@ -33,7 +34,7 @@ The deployment goals are:
 - **Operations:** CloudWatch structured logs, API Gateway access logs and metrics, and AWS X-Ray tracing of Lambda. Secrets Manager and SSM Parameter Store are the practice when a secret exists. This proof has none.
 - **Region:** `us-west-2`, except for the few CloudFront-related resources AWS requires in `us-east-1`. See Decision 10.
 
-Compute is serverless and costs nothing at idle. Each distribution is on the CloudFront flat-rate Free plan, which includes its WAF. See the cost baseline under Consequences.
+Compute is serverless and costs nothing at idle. The fixed cost is each environment's WAF web ACL; no distribution is on the CloudFront flat-rate Free plan. See the cost baseline under Consequences.
 
 ```mermaid
 flowchart LR
@@ -79,7 +80,7 @@ Local development does not use this diagram. The laptop runs the Go server and t
 
 ### 2. Authentication: Amazon Cognito User Pool
 
-**Decision.** Cognito handles sign-in for deployed environments. The React app uses the Cognito Hosted UI and receives an ID token. The API Gateway HTTP API validates that token with a JWT authorizer before any request reaches the Go Lambda. Each environment (dev, QA, prod) gets its own User Pool. There is no Identity Pool.
+**Decision.** Cognito handles sign-in for deployed environments. The React app uses the Cognito Hosted UI and receives an ID token. The API Gateway HTTP API validates that token with a JWT authorizer before any request reaches the Go Lambda. Each environment (QA, prod) gets its own User Pool. There is no Identity Pool.
 
 **Rationale.**
 - A User Pool is a managed, AWS-native identity service, and an HTTP API can check its tokens with a JWT authorizer.
@@ -114,9 +115,9 @@ The bundle does not embed environment-specific endpoints. Deploy writes a `confi
 The pipeline is CDK Pipelines (`aws_cdk.pipelines.CodePipeline`), whose source is the GitHub repository, read through an AWS CodeConnections connection. One synth step runs the tests, builds the SPA, and synthesizes the app. CDK publishes the image and the bundle once, as assets, and each environment deploys those same assets. The image lives in the CDK bootstrap ECR repository.
 
 Stages:
-- **Dev:** Deploys automatically on every push to `master`, with no approval gate.
-- **QA:** Deploys after dev.
+- **QA:** Deploys automatically on every push to `master`, with no approval gate.
 - **Prod:** Requires a manual approval action (see Decision 4).
+- *Superseded (2026-11-24):* a Dev stage deployed before QA.
 
 We will not use Git tags to trigger prod deploys.
 
@@ -130,12 +131,15 @@ We will not use Git tags to trigger prod deploys.
 - *GitHub Actions:* Capable, but it needs cross-account credentials or OIDC setup and keeps pipeline definitions outside CDK.
 - *Git tag–triggered prod releases:* More ceremony than this proof needs.
 - *A separate React build per environment:* Rejected in ADR 0002. QA would not have run the prod bundle.
+- *A dev stage before QA:* Rejected 2026-11-24. For one developer, dev duplicated QA: both deployed the same assets in turn, with the same smoke step and no gate between them.
+- *Keeping the dev stacks as a sandbox outside the pipeline:* Rejected, because a hand-deployed stack drifts from what the pipeline ships.
 
 **Consequences.**
 - (+) One pipeline definition, versioned with the infrastructure.
-- (+) Fast feedback in dev.
-- (+) The JavaScript bundle is identical in dev, QA, and prod.
+- (+) Fast feedback in QA.
+- (+) The JavaScript bundle is identical in QA and prod.
 - (−) Each environment's bucket carries its own `config.json`, and that file needs a short cache lifetime.
+- (−) QA changes on every push, so it is not a stable place for someone else to test. Revisit when a second developer or outside testers arrive.
 
 ---
 
@@ -215,7 +219,7 @@ This proof has no secret values. The Cognito client id, User Pool id, Hosted UI 
 
 **Decision.**
 - An AWS WAF web ACL sits in front of each environment's CloudFront distribution for the public React app. Each environment has its own web ACL.
-- The Proof has no domain name. Every environment (dev, QA, and prod) is served on its own `*.cloudfront.net` URL. That URL is also the environment's Cognito callback and logout URL and its API CORS origin. There is no Route 53 hosted zone and no ACM certificate.
+- The Proof has no domain name. Every environment (QA and prod) is served on its own `*.cloudfront.net` URL. That URL is also the environment's Cognito callback and logout URL and its API CORS origin. There is no Route 53 hosted zone and no ACM certificate.
 - *Superseded (2026-11-23):* an earlier version required custom domains in one shared hosted zone for QA and prod, and allowed the raw URL only for dev, until DNS existed.
 
 **Rationale.** WAF provides managed protection at the edge. A custom domain gives a stable, readable URL, but the Proof has no domain to use. A hosted zone and certificate built for a placeholder name would be code that no environment proves. The stack already derives the callback, logout, and CORS values from the distribution's own domain, so the raw URL needs no extra configuration.
@@ -233,21 +237,21 @@ This proof has no secret values. The Cognito client id, User Pool id, Hosted UI 
 
 ---
 
-### 9. Environments: dev, QA, and prod on AWS, plus local development
+### 9. Environments: QA and prod on AWS, plus local development
 
 **Decision.**
 - **Local:** Day-to-day coding on Mac laptops. The Go server and the Vite dev server run on the host. This environment does not call AWS and does not sign in. See ADR 0002.
-- **Dev on AWS:** A shared environment that deploys automatically on push to `master`, for testing real AWS behavior, including the JWT authorizer.
-- **QA on AWS:** Pre-production validation.
+- **QA on AWS:** Deploys automatically on push to `master`. It is the first place real AWS behavior is tested, including the JWT authorizer, and it is pre-production validation.
 - **Prod on AWS:** Promoted with manual approval.
 - Each environment has its own Cognito User Pool and its own `*.cloudfront.net` URL. See Decision 8.
+- *Superseded (2026-11-24):* a shared dev environment deployed before QA.
 
-**Rationale.** Local development keeps iteration fast and does not depend on AWS. The shared dev environment catches problems that only show up on AWS, such as IAM and authorizer behavior, before QA.
+**Rationale.** Local development keeps iteration fast and does not depend on AWS. QA catches problems that only show up on AWS, such as IAM and authorizer behavior, before prod.
 
 **Consequences.**
 - (+) Clear promotion path and isolation.
 - (+) Local work needs no AWS account activity.
-- (−) Three copies of the remaining stack. There is no database floor under them.
+- (−) Two copies of the remaining stack. There is no database floor under them.
 - (−) Behavior that depends on API Gateway or Cognito is invisible until a deploy.
 
 ---
@@ -296,16 +300,17 @@ Everything else runs in `us-west-2`: the Cognito User Pools, the HTTP API, Lambd
 
 **Baseline cost at idle**
 
-Assumptions: AWS documentation checked 2026-11-23. Each environment's distribution is subscribed to the CloudFront flat-rate Free plan ($0 per month). The plan includes CloudFront delivery up to 1M requests and 100 GB per month, and a WAF web ACL with up to 5 rules. There is no hosted zone.
+Assumptions: no distribution is subscribed to the CloudFront flat-rate Free plan (`list-subscriptions` was empty, checked 2026-11-24). Each web ACL has 4 rules: the rate limit and the three managed rule groups, each billed as one rule. Prices are from https://aws.amazon.com/waf/pricing/, checked 2026-11-24. There is no hosted zone.
 
 | Item | Count | Per month |
 |---|---|---|
-| CloudFront flat-rate Free plan, including WAF | 3 | $0.00 |
-| **Total before any traffic** | | **about $0** |
+| WAF web ACL | 2 | $10.00 |
+| WAF rules | 8 | $8.00 |
+| **Total before any traffic, through 2027-01-31** | | **about $18** |
 
-Pay-as-you-go pricing would instead cost about $24 per month at idle: three web ACLs at $5.00, plus nine rules at $1.00.
+From 2027-02-01, AWS WAF drops the web ACL and rule charges and bills $0.01 per hour per protected resource, so two distributions cost about $14.60/month at idle. Requests cost $0.60 per million under both. With both distributions on the Free plan it would be about $0. Whether to subscribe is T012.
 
-The Free plan has no overage charges. If an environment keeps exceeding its allowance for months, AWS may reduce its delivery performance instead. An AWS account holds at most three Free plans, and this Project's three environments use them all. A second Project in the same account would pay as it goes. A subscribed distribution cannot be deleted until its plan is cancelled. Subscribing happens in the console, not in CloudFormation. The account itself must not be on the AWS Free Tier account plan.
+The Free plan has no overage charges. If an environment keeps exceeding its allowance for months, AWS may reduce its delivery performance instead. An AWS account holds at most three Free plans, and this Project's two environments would use two of the three. A second Project in the same account would pay as it goes. A subscribed distribution cannot be deleted until its plan is cancelled. Subscribing happens in the console, not in CloudFormation. The account itself must not be on the AWS Free Tier account plan.
 
 Not included: per-request charges (API Gateway, Lambda), ECR image storage, CloudWatch Logs storage, and CodePipeline runs. At proof traffic these are expected to be small, but they are not zero.
 
@@ -313,5 +318,5 @@ Not included: per-request charges (API Gateway, Lambda), ECR image storage, Clou
 
 1. Federate campus SSO into the Cognito User Pools?
 2. *Settled 2026-11-23.* Stack layout: each environment is a CDK Pipelines stage with two stacks. `<projectName>-<environment>-edge` in `us-east-1` holds the web ACL, and `<projectName>-<environment>` in `us-west-2` holds everything else. Cross-region references join them. The pipeline is its own stack, `<projectName>-pipeline`, in `us-west-2`. Nothing is shared between environments. ([ADR 0003](0003-deployed-names-from-project-name.md) covers the names.)
-3. *Settled 2026-11-23.* Log retention: one month in dev and QA, and six months in prod. Prod log groups and the prod User Pool are retained if their stack is deleted. Dev and QA log groups are deleted with their stacks.
-4. *Settled 2026-11-23.* Yes, as a nice-to-have. Each environment's distribution is subscribed to the CloudFront flat-rate Free plan where the account allows it. The CDK keeps each distribution eligible, and subscribing is a one-time manual step. Nothing depends on the subscription. An environment that cannot subscribe runs pay-as-you-go, at about $8 per month for its web ACL and rules. See the cost baseline above.
+3. *Settled 2026-11-23.* Log retention: one month in QA, and six months in prod. Prod log groups and the prod User Pool are retained if their stack is deleted. QA log groups are deleted with their stack.
+4. *Settled 2026-11-23.* Yes, as a nice-to-have. Each environment's distribution is subscribed to the CloudFront flat-rate Free plan where the account allows it. The CDK keeps each distribution eligible, and subscribing is a one-time manual step. Nothing depends on the subscription. An environment that cannot subscribe runs pay-as-you-go, at about $9 per month for its web ACL and rules (about $7.30 from 2027-02-01). See the cost baseline above.

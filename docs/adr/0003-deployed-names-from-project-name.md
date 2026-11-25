@@ -4,7 +4,7 @@
 - **Date:** 2026-11-23
 - **Task:** T009 ([plan](../plans/2026-11-23-project-name.md))
 
-A copy of this repository must deploy as its own Project by changing one value. Each Environment's CloudFormation stack name and its Cognito Hosted UI prefix are therefore both the string `<projectName>-<environment>`. `projectName` is the only naming value in `infra/cdk.json`, and the environment is `dev`, `qa`, or `prod`. This repository's `projectName` is `swb-proof`, so dev is the stack `swb-proof-dev` with the prefix `swb-proof-dev`. Synth rejects a `projectName` that cannot produce a valid prefix for every environment. The name must use only lowercase letters, digits, and hyphens, start with a letter, and not end with a hyphen. It may be at most 58 characters, so that `<name>-prod` fits Cognito's limit of 63. It must not contain `aws`, `amazon`, or `cognito`, which Cognito refuses in a prefix.
+A copy of this repository must deploy as its own Project by changing one value. Each Environment's CloudFormation stack name and its Cognito Hosted UI prefix are therefore both the string `<projectName>-<environment>`. `projectName` is the only naming value in `infra/cdk.json`, and the environment is `qa` or `prod`. This repository's `projectName` is `swb-proof`, so QA is the stack `swb-proof-qa` with the prefix `swb-proof-qa`. Synth rejects a `projectName` that cannot produce a valid prefix for every environment. The name must use only lowercase letters, digits, and hyphens, start with a letter, and not end with a hyphen. It may be at most 58 characters, so that `<name>-prod` fits Cognito's limit of 63. It must not contain `aws`, `amazon`, or `cognito`, which Cognito refuses in a prefix.
 
 ## Considered Options
 

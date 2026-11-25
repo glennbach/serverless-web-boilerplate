@@ -13,8 +13,8 @@ One copy of this repository, deployed under its own name. This repository's proj
 _Avoid_: Fork, app, stack
 
 **Environment**:
-One deployed instance of a project on AWS: dev, QA, or prod. Work on a laptop is local development, not an environment.
-_Avoid_: Stage, stack, local environment
+One deployed instance of a project on AWS: QA or prod. Work on a laptop is local development, not an environment.
+_Avoid_: Stage, stack, local environment, dev environment
 
 **Current user**:
 The person the proof shows as signed in. The API tells the interface who this is.

@@ -129,7 +129,7 @@ The real Hosted UI and token endpoint, the API Gateway JWT authorizer and CORS, 
 
 ## Phase 2b: the pipeline and two environments
 
-`infra/` is a CDK pipeline, `swb-proof-pipeline` (`<projectName>-pipeline`), in `us-west-2`. A push to `master` on GitHub runs it. It tests the Go API, the SPA, and the CDK. It builds the SPA and the API image once, then deploys them to QA, then prod after a manual approval. It updates itself first, so a change to the pipeline ships the same way.
+`infra/` is a CDK pipeline, `swb-proof-pipeline` (`<projectName>-pipeline`), in `us-west-2`. A push to `build` on GitHub runs it. You deploy with `git push origin master:build`; a push to `master` alone runs nothing. It tests the Go API, the SPA, and the CDK. It builds the SPA and the API image once, then deploys them to QA, then prod after a manual approval. It updates itself first, so a change to the pipeline deploys the same way.
 
 Each environment (`qa`, `prod`) is two stacks ([ADR 0003](docs/adr/0003-deployed-names-from-project-name.md)):
 
@@ -161,7 +161,7 @@ cd infra && uv run pytest -q
 | Suite | What it proves |
 |---|---|
 | `infra/tests/test_environment.py` | One environment's stacks, synthesized for QA and prod. The pool schema, the client's exact callback and logout URLs, CORS for exactly the site origin, `GET /api/me` behind the JWT authorizer, the arm64 image, the JSON access logs, the SPA uploads, their cache headers, and that the local `config.json` is never uploaded. Log retention and what prod keeps. The logical ids of the deployed QA and prod stacks don't change. The web ACL fits the flat-rate Free plan, and the distribution stays eligible for it. Names come from `projectName`, and invalid names fail at synth. |
-| `infra/tests/test_pipeline.py` | QA, then prod after approval, with a smoke step after each; there is no Dev stage. The source is `master` on GitHub. The synth step runs every test suite. Every environment deploys the same image and SPA files. Missing pipeline settings fail at synth. |
+| `infra/tests/test_pipeline.py` | QA, then prod after approval, with a smoke step after each; there is no Dev stage. The source is `build` on GitHub. The synth step runs every test suite. Every environment deploys the same image and SPA files. Missing pipeline settings fail at synth. |
 
 ### One-time setup
 
@@ -173,6 +173,8 @@ cd infra && uv run pytest -q
    ```
 4. **Deploy the pipeline once by hand.** After this, it deploys itself.
    ```bash
+   # the pipeline reads build, and its first run must see step 2's settings
+   git push origin master:build
    cd web && npm ci && npm run build
    cd ../infra && cdk deploy swb-proof-pipeline
    ```
@@ -200,9 +202,17 @@ cd infra && uv run pytest -q
 
 To inspect one stack, select it by construct path, for example `cdk diff swb-proof-pipeline/Qa/Site` (`cdk ls` lists them all).
 
-### Releasing
+### Deploying and promoting
 
-Push to `master`. QA deploys on its own. To ship to prod, approve `PromoteToProd` in the CodePipeline console. An approval expires after 7 days, and the run must then be started again.
+**Deploy** a commit by putting `master` onto `build`:
+
+```bash
+git push origin master:build
+```
+
+The pipeline tests it and puts it in QA. A push to `master` alone deploys nothing. To **promote** the commit to prod, approve `PromoteToProd` in the CodePipeline console. An approval expires after 7 days, and the run must then be started again.
+
+Only fast-forward `build` from `master`, and never force-push it. To roll back, revert on `master` and deploy. Moving `build` back to a commit where `BRANCH` in `infra/pipeline.py` is still `master` would make the pipeline watch `master` again.
 
 ### Tear down
 

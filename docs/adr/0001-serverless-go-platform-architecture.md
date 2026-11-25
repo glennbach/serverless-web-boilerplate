@@ -7,6 +7,7 @@
 - **Amended:** 2026-11-22. Added Decision 10: the home region is `us-west-2`.
 - **Amended:** 2026-11-23 (T007). The Proof has no domain name, so every environment uses its own `*.cloudfront.net` URL and there is no hosted zone or ACM certificate (Decision 8). Settled open questions 2–4: stack layout, log retention, and the CloudFront flat-rate Free plan. Plan: [platform plan](../plans/2026-11-23-platform.md).
 - **Amended:** 2026-11-24 (T010). Dev is removed: a push to master deploys QA, then prod after approval. For one developer, dev duplicated QA. Both deployed the same assets in turn, with the same smoke step and no gate between them. Plan: [remove dev](../plans/2026-11-24-remove-dev-environment.md).
+- **Amended:** 2026-11-25 (T011). A push to build deploys; a push to master alone does not. Deploys should happen only on purpose. Plan: [deploy from build](../plans/2026-11-25-deploy-from-build-branch.md).
 - **Author:** Glenn Bach
 - **Scope:** AWS platform for the proof, a Go API and a React SPA with no product domain. The application itself is [ADR 0002](0002-proof-application.md).
 
@@ -106,7 +107,7 @@ Local development does not use this diagram. The laptop runs the Go server and t
 
 ### 3. CI/CD: AWS CodePipeline + CodeBuild
 
-**Decision.** A Git push to the build branch triggers CodePipeline. A CodeBuild step:
+**Decision.** A Git push to the `build` branch triggers CodePipeline. A deploy is `git push origin master:build`; a push to `master` alone deploys nothing. A CodeBuild step:
 - builds the Go container image and pushes it to Amazon ECR, and
 - builds the React production bundle once (`npm install`, production build).
 
@@ -115,7 +116,7 @@ The bundle does not embed environment-specific endpoints. Deploy writes a `confi
 The pipeline is CDK Pipelines (`aws_cdk.pipelines.CodePipeline`), whose source is the GitHub repository, read through an AWS CodeConnections connection. One synth step runs the tests, builds the SPA, and synthesizes the app. CDK publishes the image and the bundle once, as assets, and each environment deploys those same assets. The image lives in the CDK bootstrap ECR repository.
 
 Stages:
-- **QA:** Deploys automatically on every push to `master`, with no approval gate.
+- **QA:** Deploys automatically on every push to `build`, with no approval gate.
 - **Prod:** Requires a manual approval action (see Decision 4).
 - *Superseded (2026-11-24):* a Dev stage deployed before QA.
 
@@ -132,6 +133,7 @@ We will not use Git tags to trigger prod deploys.
 - *Git tag–triggered prod releases:* More ceremony than this proof needs.
 - *A separate React build per environment:* Rejected in ADR 0002. QA would not have run the prod bundle.
 - *A dev stage before QA:* Rejected 2026-11-24. For one developer, dev duplicated QA: both deployed the same assets in turn, with the same smoke step and no gate between them.
+- *Deploying on every push to `master`:* Rejected 2026-11-25. Deploys should happen only on purpose, not as a side effect of saving work.
 - *Keeping the dev stacks as a sandbox outside the pipeline:* Rejected, because a hand-deployed stack drifts from what the pipeline ships.
 
 **Consequences.**
@@ -139,7 +141,7 @@ We will not use Git tags to trigger prod deploys.
 - (+) Fast feedback in QA.
 - (+) The JavaScript bundle is identical in QA and prod.
 - (−) Each environment's bucket carries its own `config.json`, and that file needs a short cache lifetime.
-- (−) QA changes on every push, so it is not a stable place for someone else to test. Revisit when a second developer or outside testers arrive.
+- (−) QA changes on every deploy, so it is not a stable place for someone else to test. Revisit when a second developer or outside testers arrive.
 
 ---
 
@@ -155,7 +157,7 @@ We will not use Git tags to trigger prod deploys.
 
 **Consequences.**
 - (+) Clear human gate before prod, with an audit trail.
-- (−) Releases depend on an approver being available.
+- (−) Promotion depends on an approver being available.
 - (−) Approvals expire after 7 days if no one acts, so the pipeline needs to be re-run in that case.
 
 ---
@@ -241,7 +243,7 @@ This proof has no secret values. The Cognito client id, User Pool id, Hosted UI 
 
 **Decision.**
 - **Local:** Day-to-day coding on Mac laptops. The Go server and the Vite dev server run on the host. This environment does not call AWS and does not sign in. See ADR 0002.
-- **QA on AWS:** Deploys automatically on push to `master`. It is the first place real AWS behavior is tested, including the JWT authorizer, and it is pre-production validation.
+- **QA on AWS:** Deploys automatically on push to `build`. It is the first place real AWS behavior is tested, including the JWT authorizer, and it is pre-production validation.
 - **Prod on AWS:** Promoted with manual approval.
 - Each environment has its own Cognito User Pool and its own `*.cloudfront.net` URL. See Decision 8.
 - *Superseded (2026-11-24):* a shared dev environment deployed before QA.

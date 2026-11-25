@@ -43,6 +43,17 @@ def test_source_is_build_on_github(pipeline):
     assert all(source["Configuration"][k] == v for k, v in expected.items())
 
 
+def test_only_a_push_to_build_starts_the_pipeline(pipeline):
+    # Without explicit Triggers, AWS derives a push filter from the branch the pipeline was created with
+    # and may keep it after the source branch changes, so pushes to master would keep starting runs.
+    (resource,) = Template.from_stack(pipeline).find_resources("AWS::CodePipeline::Pipeline").values()
+    source = resource["Properties"]["Stages"][0]["Actions"][0]
+    assert resource["Properties"]["Triggers"] == [{
+        "ProviderType": "CodeStarSourceConnection",
+        "GitConfiguration": {"SourceActionName": source["Name"], "Push": [{"Branches": {"Includes": ["build"]}}]},
+    }]
+
+
 def test_synth_tests_everything_before_synth(pipeline):
     specs = json.dumps(Template.from_stack(pipeline).find_resources("AWS::CodeBuild::Project"))
     for command in ("go test ./...", "npm test", "npm run build", "uv run pytest -q", "cdk synth"):

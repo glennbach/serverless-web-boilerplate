@@ -9,6 +9,7 @@ import os
 import re
 
 from aws_cdk import App, Environment, Stack
+from aws_cdk import aws_codepipeline as codepipeline
 from aws_cdk import pipelines
 from constructs import Construct
 
@@ -103,6 +104,16 @@ class PipelineStack(Stack):
             )
             pipeline.add_stage(stage, pre=[approval] if environment == "prod" else [], post=[smoke])
             self.stages[environment] = stage
+        # Without an explicit trigger, AWS derives one from the branch the pipeline was created with,
+        # and it may outlive a change of BRANCH.
+        pipeline.build_pipeline()
+        pipeline.pipeline.add_trigger(
+            provider_type=codepipeline.ProviderType.CODE_STAR_SOURCE_CONNECTION,
+            git_configuration=codepipeline.GitConfiguration(
+                source_action=pipeline.pipeline.stages[0].actions[0],
+                push_filter=[codepipeline.GitPushFilter(branches_includes=[BRANCH])],
+            ),
+        )
 
 
 def _setting(app: App, key: str, pattern: re.Pattern) -> str:

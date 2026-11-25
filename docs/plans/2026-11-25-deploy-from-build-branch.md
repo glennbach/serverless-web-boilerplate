@@ -21,6 +21,7 @@
 | Rules for `build` | Only fast-forward it from `master`, and never force-push it. Roll back by reverting on `master` and deploying. There is no GitHub branch protection rule; add one when a second person can push. |
 | Proving master doesn't deploy | Push T011's docs-only closing commit to `master` alone and confirm no run starts. Then deploy it and confirm a run starts. |
 | PromoteToProd | Approve the cutover run and the verification run once QA's smoke step passes. Prod's stacks don't change. |
+| Explicit trigger | Added during execution (2026-11-25). The live pipeline held an AWS-derived trigger `push, branches includes [master]`, although the template had none. The pipeline now declares `Triggers: push to build` (`add_trigger` in `infra/pipeline.py`), pinned by `test_only_a_push_to_build_starts_the_pipeline`. `cdk diff` showed only `BranchName` and `Triggers` changing. |
 | Who pushes | Sometimes the user pushes. Otherwise the agent pushes, but only after the user confirms that step in the session. Either way, the agent runs the AWS checks after each push. |
 
 ## Global Constraints

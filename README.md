@@ -161,7 +161,7 @@ cd infra && uv run pytest -q
 | Suite | What it proves |
 |---|---|
 | `infra/tests/test_environment.py` | One environment's stacks, synthesized for QA and prod. The pool schema, the client's exact callback and logout URLs, CORS for exactly the site origin, `GET /api/me` behind the JWT authorizer, the arm64 image, the JSON access logs, the SPA uploads, their cache headers, and that the local `config.json` is never uploaded. Log retention and what prod keeps. The logical ids of the deployed QA and prod stacks don't change. The web ACL fits the flat-rate Free plan, and the distribution stays eligible for it. Names come from `projectName`, and invalid names fail at synth. |
-| `infra/tests/test_pipeline.py` | QA, then prod after approval, with a smoke step after each; there is no Dev stage. The source is `build` on GitHub. The synth step runs every test suite. Every environment deploys the same image and SPA files. Missing pipeline settings fail at synth. |
+| `infra/tests/test_pipeline.py` | QA, then prod after approval, with a smoke step after each; there is no Dev stage. The source is `build` on GitHub, and only a push to `build` starts the pipeline. The synth step runs every test suite. Every environment deploys the same image and SPA files. Missing pipeline settings fail at synth. |
 
 ### One-time setup
 

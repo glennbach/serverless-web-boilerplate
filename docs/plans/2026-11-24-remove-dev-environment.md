@@ -37,7 +37,7 @@
 2. **The Site stack is deleted before the edge stack.** WAF refuses to delete a web ACL that a distribution uses, and the cross-region export writer refuses to delete parameters that a reader still holds. This is pinned by Task 3's step order.
 3. **A refactor changes a logical id or a replacement-causing property on prod.** The retained prod pool would be orphaned, and a new empty pool would replace it. Logical ids are pinned by `test_deployed_logical_ids_are_unchanged` for QA and prod (Task 1). Property changes are caught by Task 1, Step 5's diff of the QA and prod stacks.
 4. **Something still accepts `dev` as an environment.** A typo or an old script would synthesize a dev stack. This is pinned by `test_unknown_environment_fails["dev"]` (Task 1).
-5. **A delete fails partway.** For example, `DELETE_FAILED` happens on a resource. The executor stops and reports the stack events, and does not retry with `--retain-resources` or delete resources by hand without the user (Task 3).
+5. **A delete fails partway.** For example, `DELETE_FAILED` happens on a resource, or `wait` gives up after 60 minutes. The executor stops and reports the stack events, and does not retry with `--retain-resources` or delete resources by hand without the user (Task 3).
 
 ---
 
@@ -177,7 +177,7 @@ Expected: a list, probably one web ACL ARN parameter. Record it, because Step 7 
 aws cloudformation delete-stack --region us-west-2 --stack-name swb-proof-dev
 aws cloudformation wait stack-delete-complete --region us-west-2 --stack-name swb-proof-dev
 ```
-Expected: the wait returns with exit code 0. On `DELETE_FAILED`, stop and show the user `describe-stack-events` (Review Focus 5).
+Expected: the wait returns with exit code 0. On any non-zero exit, including `DELETE_FAILED` or the wait giving up after 60 minutes (a CloudFront distribution can be slow to delete), stop, run `describe-stacks` and `describe-stack-events`, and show the user before doing anything else (Review Focus 5).
 
 - [ ] **Step 6: Delete the dev edge stack (confirm first)**
 

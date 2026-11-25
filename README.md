@@ -30,7 +30,7 @@ A copy of this repository deploys as its own project, with its own stacks, User 
 3. **Set `repository` (`owner/name`) and `connectionArn` in `infra/cdk.json`**, from the GitHub connection described under [One-time setup](#one-time-setup).
 4. **Follow [One-time setup](#one-time-setup):** bootstrap `us-west-2` and `us-east-1`, deploy the pipeline once, and create users.
 
-An AWS account holds at most three CloudFront flat-rate Free plans, and one project's two environments use two of them, leaving one. A second project in the same account runs pay-as-you-go, which costs about $9 per month per environment for WAF (about $7.30 from 2027-02-01).
+An AWS account holds at most three CloudFront flat-rate Free plans, and one project's two environments would use two of them. No environment is subscribed (see T012), so each runs pay-as-you-go, which costs about $9 per month per environment for WAF (about $7.30 from 2027-02-01).
 
 ---
 

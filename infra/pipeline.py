@@ -1,4 +1,6 @@
-"""The Project's delivery pipeline: a push to ``master`` deploys QA, then prod after approval.
+"""The Project's delivery pipeline: a push to ``build`` deploys QA, then prod after approval.
+
+Deploy with ``git push origin master:build``. A push to ``master`` alone deploys nothing.
 
 See docs/plans/2026-11-23-platform.md and ADR 0001, Decisions 3 and 4.
 """
@@ -12,8 +14,8 @@ from constructs import Construct
 
 from environment import ENVIRONMENTS, HOME_REGION, EnvironmentStage, checked_project_name
 
-#: The branch whose pushes start the pipeline.
-BRANCH = "master"
+#: The branch whose pushes start the pipeline. Only fast-forward it from master.
+BRANCH = "build"
 
 #: A GitHub repository, ``owner/name``.
 REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")

@@ -166,7 +166,7 @@ cd infra && uv run pytest -q
 ### One-time setup
 
 1. **Put the repository on GitHub** with `master` as its default branch.
-2. **Create a connection.** In the AWS console, go to Developer Tools → Settings → Connections, in `us-west-2`, and create a GitHub connection. Install the AWS Connector app for this repository only. When its status is `Available`, put its ARN in `connectionArn` and `owner/name` in `repository` in `infra/cdk.json`. Commit and push.
+2. **Create a connection.** In the AWS console, go to Developer Tools → Settings → Connections, in `us-west-2`, and create a GitHub connection. When it asks for a GitHub App, choose **Install a new app** to install "AWS Connector for GitHub" on the account that owns the repository, with access to this repository only. Don't skip it: without the app, the connection can still show `Available` and the pipeline can still fetch code, but pushes never start it. To check, open GitHub → Settings → Applications → Installed GitHub Apps; "AWS Connector for GitHub" must be listed there with this repository under Repository access. When the connection's status is `Available`, put its ARN in `connectionArn` and `owner/name` in `repository` in `infra/cdk.json`. Commit and push.
 3. **Bootstrap both regions**, once per account:
    ```bash
    cd infra && cdk bootstrap aws://<account>/us-west-2 aws://<account>/us-east-1
